@@ -1,0 +1,67 @@
+# Python environments and caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets and local environment configuration
+.env
+.env.*
+!.env.example
+*.key
+*.p12
+*.pfx
+credentials*.json
+secrets*.json
+
+# User search configuration (track searches.example.json only)
+searches.json
+searches.json.*
+
+# SQLite databases, sidecars, and local backups
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.bak
+*.backup
+*.backup-*
+*.journal
+
+# Browser profiles and saved session/authentication state
+data/playwright/
+playwright-profile*/
+browser-profile*/
+user-data-dir*/
+
+# Generated reports and diagnostic artifacts
+output/**
+!output/.gitkeep
+debug/
+logs/
+*.log
+screenshots/
+screenshot*.png
+screenshot*.jpg
+
+# Temporary/editor files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.code-workspace
+.DS_Store
+Thumbs.db
+Desktop.ini

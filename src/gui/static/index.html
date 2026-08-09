@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Resell Monitor</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">R</span><div><strong>Resell Monitor</strong><small>LOCAL INTELLIGENCE</small></div></div>
+    <nav id="nav">
+      <button class="nav-item active" data-page="overview"><span>⌁</span>Overview</button>
+      <button class="nav-item" data-page="searches"><span>⌕</span>Searches</button>
+      <button class="nav-item" data-page="listings"><span>▤</span>Listings</button>
+      <button class="nav-item" data-page="market"><span>◇</span>Market</button>
+      <button class="nav-item" data-page="history"><span>↗</span>History</button>
+      <button class="nav-item" data-page="sources"><span>◉</span>Sources</button>
+      <button class="nav-item" data-page="settings"><span>⚙</span>Settings</button>
+    </nav>
+    <div class="sidebar-foot"><div class="runtime-dot"></div><div><small>MONITOR STATUS</small><strong id="side-runtime">Idle</strong></div></div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div><p class="eyebrow" id="page-eyebrow">CONTROL CENTER</p><h1 id="page-title">Overview</h1></div>
+      <div class="top-actions">
+        <span class="runtime-pill"><i></i><span id="runtime-state">Idle</span></span>
+        <button class="btn ghost" id="stop-btn">Stop</button>
+        <button class="btn secondary" id="start-btn">Start monitoring</button>
+        <button class="btn primary" id="scan-btn">Scan now</button>
+      </div>
+    </header>
+
+    <section class="page active" id="page-overview">
+      <div class="metric-grid" id="overview-metrics"></div>
+      <div class="split-grid">
+        <article class="panel span-2"><div class="panel-head"><div><p class="eyebrow">MARKETPLACE STATUS</p><h2>Source health</h2></div><button class="text-btn" data-go="sources">View details →</button></div><div class="source-grid" id="overview-sources"></div></article>
+        <article class="panel"><div class="panel-head"><div><p class="eyebrow">SCHEDULE</p><h2>Monitor timing</h2></div></div><div id="timing-card"></div></article>
+      </div>
+      <article class="panel"><div class="panel-head"><div><p class="eyebrow">EVENT STREAM</p><h2>Recent activity</h2></div><button class="text-btn" data-go="history">Full history →</button></div><div class="activity-list" id="recent-activity"></div></article>
+    </section>
+
+    <section class="page" id="page-searches">
+      <div class="section-actions"><p>Broad first-page searches with local filtering and independent schedules.</p><button class="btn primary" id="new-search-btn">+ New search</button></div>
+      <div class="search-grid" id="search-list"></div>
+    </section>
+
+    <section class="page" id="page-listings">
+      <article class="panel filters">
+        <div class="filter-row">
+          <label>Search<input id="filter-text" placeholder="Title or description"></label>
+          <label>Source<select id="filter-source"><option value="">All sources</option><option>avito</option><option>farpost</option><option>youla</option></select></label>
+          <label>Status<select id="filter-status"><option value="">All statuses</option><option>new</option><option>reviewed</option><option>interesting</option><option>ignored</option><option>bought</option></select></label>
+          <label>Availability<select id="filter-availability"><option value="">All</option><option value="active">Active</option><option value="stale">Stale</option><option value="unavailable">Unavailable</option><option value="unknown">Unknown</option></select></label>
+          <label>Saved search<select id="filter-search"><option value="">All searches</option></select></label>
+        </div>
+        <div class="filter-row compact"><label>Min price<input id="filter-min" type="number" min="0"></label><label>Max price<input id="filter-max" type="number" min="0"></label><label class="check"><input id="filter-new" type="checkbox">New only</label><label class="check"><input id="filter-drops" type="checkbox">Price drops</label><button class="btn secondary" id="apply-filters">Apply</button><button class="btn ghost" id="clear-filters">Clear</button><button class="btn secondary push" id="copy-btn">Copy for analysis</button><div class="export-menu"><button class="btn ghost" id="export-btn">Export ▾</button><div class="menu" id="export-menu"><button data-format="json">JSON</button><button data-format="txt">TXT</button><button data-format="html">HTML</button></div></div></div>
+      </article>
+      <article class="panel table-panel"><div class="table-wrap"><table><thead><tr><th></th><th>Source</th><th>Listing</th><th>Current price</th><th>Change</th><th>Location</th><th>First seen</th><th>Availability</th><th>Status</th><th>Resale rating</th></tr></thead><tbody id="listing-table"></tbody></table></div><div class="empty" id="listing-empty">No listings match these filters.</div></article>
+    </section>
+
+    <section class="page" id="page-market">
+      <div class="market-layout">
+        <article class="panel market-products"><div class="panel-head"><div><p class="eyebrow">LOCAL USED-MARKET DATA</p><h2>Local matches</h2></div></div><label>Product category<select id="market-category"><option value="">All</option><option value="gpu">GPUs</option><option value="cpu">CPUs</option><option value="ram">RAM</option><option value="ssd">SSDs</option></select></label><div class="market-search"><input id="market-query" placeholder="RTX 3060, DDR5 32GB…"><button class="btn primary" id="market-search-btn">Search</button></div><div id="market-results" class="market-results" role="listbox" aria-label="Comparable local products"></div></article>
+        <div class="market-main">
+          <div id="market-empty" class="panel empty market-empty">No market data collected yet.</div>
+          <div id="market-content" hidden>
+            <div class="market-summary-grid" id="market-summary"></div>
+            <div class="candidate-strip"><article class="panel candidate-panel"><div class="panel-head"><div><p class="eyebrow">CURRENT LISTINGS</p><h2>Selected product candidates</h2></div></div><div id="market-candidates" class="candidate-grid"></div></article><article class="panel compact-opportunities"><div class="panel-head"><div><p class="eyebrow">ACROSS ALL MODELS</p><h2>Top opportunities</h2></div></div><div id="top-opportunities" class="opportunity-grid"></div></article></div>
+            <article class="panel"><div class="panel-head"><div><p class="eyebrow">USED ASKING PRICES</p><h2 id="market-chart-title">Market movement</h2></div><div class="range-tabs" id="market-ranges"><button data-range="7D">7D</button><button class="active" data-range="30D">30D</button><button data-range="90D">90D</button><button data-range="ALL">ALL</button></div></div><div id="used-chart" class="chart"></div><div id="chart-tooltip" class="chart-tooltip"></div></article>
+            <article class="panel"><div class="panel-head"><div><p class="eyebrow">SECONDARY REFERENCE</p><h2>Retail price history</h2></div><button class="btn ghost" id="refresh-retail">Refresh retail prices</button></div><div id="retail-summary"></div><div id="retail-toggles" class="range-tabs"></div><div id="retail-chart" class="chart retail-empty">Retail data not configured yet.</div></article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="page-history">
+      <div class="history-summary"><article class="mini-panel"><span>↓</span><div><small>PRICE DROPS</small><strong id="history-drops">0</strong></div></article><article class="mini-panel"><span>＋</span><div><small>NEW DISCOVERIES</small><strong id="history-new">0</strong></div></article></div>
+      <article class="panel"><div class="panel-head"><div><p class="eyebrow">CHRONOLOGICAL</p><h2>Monitoring events</h2></div></div><div class="timeline" id="history-list"></div></article>
+    </section>
+
+    <section class="page" id="page-sources">
+      <div class="source-detail-grid" id="source-details"></div>
+    </section>
+
+    <section class="page" id="page-settings">
+      <div class="settings-grid">
+        <article class="panel"><div class="panel-head"><div><p class="eyebrow">NEW SEARCH DEFAULTS</p><h2>Schedule and resilience</h2></div></div><div class="form-grid" id="settings-form"><label class="span-2">Interval, seconds<input data-setting="default_interval_seconds" type="number" min="60"></label><label class="span-2">Jitter, seconds<input data-setting="default_jitter_seconds" type="number" min="0"></label><label class="span-2">Block retry delay<input data-setting="default_block_retry_delay_seconds" type="number" min="0"></label><label class="span-2">Cooldown, seconds<input data-setting="default_block_cooldown_seconds" type="number" min="60"></label><label class="span-2">Block retries<select data-setting="default_max_block_retries"><option value="0">0</option><option value="1">1</option></select></label><label class="span-2">Default export<select data-setting="default_export_format"><option>json</option><option>txt</option><option>html</option></select></label><label class="span-2">UI refresh, seconds<input data-setting="ui_refresh_seconds" type="number" min="1" max="30"></label><label class="span-2">Market lookback, days<input data-setting="market_lookback_days" type="number" min="7" max="365"></label><div class="span-2" style="align-self:end"><button class="btn primary" id="save-settings">Save defaults</button></div></div></article>
+        <article class="panel"><div class="panel-head"><div><p class="eyebrow">TRAFFIC POLICY</p><h2>Fixed safety behavior</h2></div></div><div class="setting-row"><div><strong>Automatic startup scans</strong><p>Opening the application never contacts a marketplace.</p></div><span class="tag experimental">Disabled</span></div><div class="setting-row"><div><strong>Sequential first-page scans</strong><p>No pagination or item-page enrichment.</p></div><span class="tag healthy">Active</span></div><div class="setting-row"><div><strong>Proxy automation</strong><p>No discovery, rotation, or automatic switching.</p></div><span class="tag experimental">Off</span></div></article>
+        <article class="panel"><div class="panel-head"><div><p class="eyebrow">RETAIL INTELLIGENCE</p><h2>New-price references</h2></div></div><div class="form-grid"><label>DNS<select data-setting="retail_dns_enabled"><option value="0">Disabled</option><option value="1">Enabled</option></select></label><label>Ozon<select data-setting="retail_ozon_enabled"><option value="0">Disabled</option><option value="1">Enabled</option></select></label><label>Wildberries<select data-setting="retail_wildberries_enabled"><option value="0">Disabled</option><option value="1">Enabled</option></select></label><label>Refresh interval, hours<input data-setting="retail_refresh_interval_hours" type="number" min="1" max="720"></label><label class="span-2">Region/locality<input data-setting="retail_region" placeholder="Khabarovsk"></label></div><p class="muted">Retail requests occur only after an explicit refresh or while explicitly started monitoring becomes due.</p><div id="retail-health"></div></article>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast-stack" id="toasts"></div>
+
+  <dialog id="search-dialog" class="modal wide"><form method="dialog" id="search-form"><div class="modal-head"><div><p class="eyebrow">SEARCH CONFIGURATION</p><h2 id="search-modal-title">New search</h2></div><button class="icon-btn close-search" type="button">×</button></div><input type="hidden" id="search-original-name"><div class="form-grid">
+    <label class="span-2">Name<input name="name" required></label><label>Source<select name="source"><option>avito</option><option>farpost</option><option>youla</option></select></label><label class="check field-check"><input name="enabled" type="checkbox" checked>Enabled</label>
+    <label class="span-4">Marketplace category/search URL<input name="url" type="url" required></label>
+    <label>Interval, seconds<input name="interval_seconds" type="number" min="60" value="900" required></label><label>Jitter, seconds<input name="jitter_seconds" type="number" min="0" value="30"></label><label>Retry delay<input name="block_retry_delay_seconds" type="number" min="0" value="60"></label><label>Cooldown<input name="block_cooldown_seconds" type="number" min="60" value="900"></label>
+    <label>Min price<input name="min_price" type="number" min="0"></label><label>Max price<input name="max_price" type="number" min="0"></label><label>Target price<input name="target_price" type="number" min="1"></label><label>Block retries<select name="max_block_retries"><option value="0">0</option><option value="1" selected>1</option></select></label>
+    <label class="span-2">Include terms<textarea name="include_terms" placeholder="rtx, geforce, radeon"></textarea></label><label class="span-2">Exclude terms<textarea name="exclude_terms" placeholder="repair, broken, parts"></textarea></label><label class="span-4">Brands<textarea name="brands" placeholder="asus, gigabyte, msi"></textarea></label>
+    <label>Network route<select name="network_route" id="network-route"><option value="direct">System / direct</option><option value="proxy">User proxy</option></select></label><label class="span-3">Proxy URL<input name="proxy_url" id="proxy-url" placeholder="Credentials are never displayed after save" autocomplete="new-password"></label>
+    <label>Avito impersonation<input name="avito_impersonation" value="chrome"></label><label>Avito session<select name="avito_session_mode"><option value="persistent">Persistent</option><option value="fresh">Fresh</option></select></label><div class="span-2 secret-note">Proxy credentials are treated as secrets. Leave this field blank while editing to keep the stored proxy.</div>
+  </div><div class="modal-actions"><button class="btn ghost close-search" type="button">Cancel</button><button class="btn primary" id="save-search-btn" type="submit">Save search</button></div></form></dialog>
+
+  <dialog id="listing-dialog" class="modal"><div id="listing-detail"></div></dialog>
+  <dialog id="confirm-dialog" class="modal small"><div class="modal-head"><div><p class="eyebrow">CONFIRM ACTION</p><h2>Delete saved search?</h2></div></div><p>This removes the configuration but keeps previously discovered listings.</p><div class="modal-actions"><button class="btn ghost" id="confirm-cancel">Cancel</button><button class="btn danger" id="confirm-delete">Delete</button></div></dialog>
+  <script src="/app.js"></script>
+</body>
+</html>

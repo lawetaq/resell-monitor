@@ -1,0 +1,4 @@
+beautifulsoup4>=4.12,<5
+curl_cffi>=0.13,<1
+playwright>=1.52,<2
+requests>=2.32,<3

@@ -1,0 +1,39 @@
+[
+  {
+    "name": "Avito broad video cards",
+    "source": "avito",
+    "enabled": false,
+    "url": "https://www.avito.ru/all/tovary_dlya_kompyutera/komplektuyuschie/videokarty-ASgBAgICAkTGB~pm7gmmZw",
+    "interval_seconds": 1200,
+    "jitter_seconds": 60,
+    "include_terms": ["rtx", "radeon", "geforce"],
+    "exclude_terms": ["ремонт", "неисправна", "на запчасти"],
+    "brands": ["asus", "gigabyte", "msi", "palit", "sapphire"],
+    "max_price": 35000,
+    "target_price": 25000,
+    "block_retry_delay_seconds": 60,
+    "block_cooldown_seconds": 1200,
+    "max_block_retries": 1,
+    "network_route": "direct",
+    "avito_impersonation": "chrome",
+    "avito_session_mode": "persistent"
+  },
+  {
+    "name": "FarPost video cards",
+    "source": "farpost",
+    "enabled": false,
+    "url": "https://www.farpost.ru/khabarovsk/tech/computers/components/video/?query=RTX+3060",
+    "interval_seconds": 900,
+    "include_terms": ["rtx", "geforce"],
+    "exclude_terms": ["ремонт", "неисправна"],
+    "max_price": 35000,
+    "target_price": 25000
+  },
+  {
+    "name": "Youla components",
+    "source": "youla",
+    "enabled": false,
+    "url": "https://youla.ru/habarovsk/kompyutery/komplektuyushchie",
+    "interval_seconds": 1200
+  }
+]
