@@ -39,3 +39,4 @@
 @media(max-width:1250px){#page-market .market-summary-grid{grid-template-columns:repeat(3,1fr)}.candidate-strip{grid-template-columns:1fr}}
 @media(max-width:1000px){#page-market .market-layout{grid-template-columns:1fr}#page-market .market-products{position:static;max-height:none}#page-market .market-results{max-height:320px}.candidate-grid{grid-template-columns:1fr}}
 .availability-badge{display:inline-flex;padding:5px 8px;border:1px solid #526071;border-radius:7px;font-size:10px;font-weight:800;letter-spacing:.08em;color:#d4dbe5}.availability-badge.active{color:#b7ffd2;border-color:#258b58;background:#0d4a2d}.availability-badge.stale{color:#ffe3a0;border-color:#9a7127;background:#4b3612}.availability-badge.archived,.availability-badge.disappeared{color:#ffc2c2;border-color:#a43d4b;background:#501d25}.availability-text{color:#aab5c3}
+.tag.blocked{color:#ff9ca2;background:#30171c;border-color:#64262e}

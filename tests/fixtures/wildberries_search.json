@@ -1,0 +1,47 @@
+{
+  "data": {
+    "products": [
+      {
+        "id": 101,
+        "name": "Видеокарта Gigabyte GeForce RTX 3060 12GB",
+        "supplierName": "Example Seller",
+        "sizes": [
+          {
+            "optionId": 1001,
+            "price": {"basic": 3000000, "product": 2500000, "total": 2300000},
+            "stocks": [{"qty": 2}]
+          },
+          {
+            "optionId": 1002,
+            "price": {"basic": 3050000, "product": 2550000, "total": 2350000},
+            "stocks": [{"qty": 1}]
+          }
+        ]
+      },
+      {
+        "id": 102,
+        "name": "Видеокарта Gigabyte GeForce RTX 3060 8GB",
+        "supplierName": "Other Seller",
+        "sizes": [
+          {
+            "optionId": 2001,
+            "price": {"basic": 2800000, "product": 2400000, "total": 2200000},
+            "stocks": [{"qty": 3}]
+          }
+        ]
+      },
+      {
+        "id": 103,
+        "name": "Видеокарта Palit GeForce RTX 3060 12GB",
+        "supplierName": "Unavailable Seller",
+        "sizes": [
+          {
+            "optionId": 3001,
+            "price": {"basic": 2900000, "product": 2450000},
+            "stocks": [{"qty": 0}]
+          }
+        ]
+      }
+    ]
+  }
+}

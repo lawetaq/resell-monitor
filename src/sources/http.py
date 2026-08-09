@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
 
 import requests
 
@@ -17,6 +18,8 @@ class HttpPage:
     status_code: int
     final_url: str
     content_type: str
+    response_size: int | None = None
+    retry_after: str | None = None
 
 
 class HttpTransport:
@@ -26,9 +29,13 @@ class HttpTransport:
         timeout: float = 30,
         session: requests.Session | None = None,
         proxy: str | None = None,
+        headers: Mapping[str, str] | None = None,
     ) -> None:
         self.timeout = timeout
         self.proxy = proxy
+        self.headers = dict(headers or {
+            "User-Agent": "Mozilla/5.0 (compatible; ResellMonitor/1.0; conservative local monitor)"
+        })
         self.session = session or requests.Session()
         if proxy is not None:
             self.session.proxies.update({"http": proxy, "https": proxy})
@@ -38,7 +45,7 @@ class HttpTransport:
             response = self.session.get(
                 url,
                 timeout=self.timeout,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; ResellMonitor/1.0; conservative local monitor)"},
+                headers=self.headers,
             )
         except requests.RequestException as error:
             detail = str(error).replace(self.proxy, "[REDACTED PROXY]") if self.proxy else str(error)
@@ -48,7 +55,14 @@ class HttpTransport:
                 f"HTTP {response.status_code}",
                 retryable=response.status_code in {408, 425, 500, 502, 503, 504},
             )
-        return HttpPage(response.text, response.status_code, response.url, response.headers.get("content-type", ""))
+        return HttpPage(
+            response.text,
+            response.status_code,
+            response.url,
+            response.headers.get("content-type", ""),
+            len(response.content),
+            response.headers.get("retry-after"),
+        )
 
     def close(self) -> None:
         self.session.close()

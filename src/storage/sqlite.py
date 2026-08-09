@@ -39,7 +39,7 @@ class SearchAccessState:
 
 
 class ListingRepository:
-    SCHEMA_VERSION = 4
+    SCHEMA_VERSION = 5
     ANALYTICS_BACKFILL_VERSION = 1
 
     def __init__(self, path: str | Path, *, freshness_policy: FreshnessPolicy | None = None) -> None:
@@ -76,6 +76,8 @@ class ListingRepository:
                 self._migrate_retail_v3()
             if version < 4:
                 self._migrate_availability_v4()
+            if version < 5:
+                self._migrate_wildberries_v5()
             self.connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
             self.connection.commit()
         except BaseException:
@@ -256,6 +258,18 @@ class ListingRepository:
                    WHERE source=? AND external_id=?""",
                 (availability.value, now.isoformat(), row["source"], row["external_id"]),
             )
+
+    def _migrate_wildberries_v5(self) -> None:
+        self._ensure_column("retail_price_observations", "conditional_price", "INTEGER")
+        for column, definition in (
+            ("retrieval_method", "TEXT"),
+            ("last_observation_at", "TEXT"),
+            ("block_classification", "TEXT NOT NULL DEFAULT 'none'"),
+            ("retry_after_seconds", "INTEGER"),
+            ("response_content_type", "TEXT"),
+            ("response_size", "INTEGER"),
+        ):
+            self._ensure_column("retail_provider_state", column, definition)
 
     def upsert(self, listing: Listing, *, observed_at: datetime | None = None) -> UpsertOutcome:
         timestamp = (observed_at or datetime.now(timezone.utc)).isoformat()
@@ -857,6 +871,11 @@ class ListingRepository:
                     "UPDATE retail_price_observations SET last_seen_at=? WHERE fingerprint=?",
                     (timestamp, fingerprint),
                 )
+            if observation.conditional_price is not None:
+                self.connection.execute(
+                    "UPDATE retail_price_observations SET conditional_price=? WHERE fingerprint=?",
+                    (observation.conditional_price, fingerprint),
+                )
 
     def retail_observations(self, comparable_key: str) -> list[dict[str, object]]:
         return [dict(row) for row in self.connection.execute(
@@ -924,20 +943,35 @@ class ListingRepository:
                                      successful: bool, status: int | None,
                                      transport: str, error: str | None,
                                      observed_at: datetime, next_refresh_at: datetime | None,
-                                     region: str | None) -> None:
+                                     region: str | None,
+                                     retrieval_method: str | None = None,
+                                     last_observation_at: datetime | None = None,
+                                     block_classification: str = "none",
+                                     retry_after_seconds: int | None = None,
+                                     response_content_type: str | None = None,
+                                     response_size: int | None = None) -> None:
         success = observed_at.isoformat() if successful else None
         failure = None if successful else observed_at.isoformat()
         with self.connection:
             self.connection.execute("""INSERT INTO retail_provider_state(
                 retailer,health,last_success_at,last_failure_at,last_http_status,
-                transport,last_error,next_refresh_at,region) VALUES (?,?,?,?,?,?,?,?,?)
+                transport,last_error,next_refresh_at,region,retrieval_method,
+                last_observation_at,block_classification,retry_after_seconds,
+                response_content_type,response_size) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(retailer) DO UPDATE SET health=excluded.health,
                 last_success_at=COALESCE(excluded.last_success_at,retail_provider_state.last_success_at),
                 last_failure_at=COALESCE(excluded.last_failure_at,retail_provider_state.last_failure_at),
                 last_http_status=excluded.last_http_status,transport=excluded.transport,
                 last_error=excluded.last_error,next_refresh_at=excluded.next_refresh_at,
-                region=excluded.region""", (retailer, health, success, failure, status,
-                transport, error, next_refresh_at.isoformat() if next_refresh_at else None, region))
+                region=excluded.region,retrieval_method=excluded.retrieval_method,
+                last_observation_at=COALESCE(excluded.last_observation_at,retail_provider_state.last_observation_at),
+                block_classification=excluded.block_classification,
+                retry_after_seconds=excluded.retry_after_seconds,
+                response_content_type=excluded.response_content_type,
+                response_size=excluded.response_size""", (retailer, health, success, failure, status,
+                transport, error, next_refresh_at.isoformat() if next_refresh_at else None, region,
+                retrieval_method, last_observation_at.isoformat() if last_observation_at else None,
+                block_classification, retry_after_seconds, response_content_type, response_size))
 
     def retail_provider_states(self) -> list[dict[str, object]]:
         return [dict(row) for row in self.connection.execute(

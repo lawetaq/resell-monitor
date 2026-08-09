@@ -15,6 +15,8 @@ class RetailRefresh:
     candidates: int
     accepted: int
     error: str | None = None
+    retrieval_method: str = "search"
+    block_classification: str = "none"
 
 
 class RetailMonitor:
@@ -44,12 +46,24 @@ class RetailMonitor:
                 result = RetailRetrievalResult(name, (), health="failed", error=str(exc))
                 successful = False
                 error = str(exc)
+            cooldown = self.interval
+            if result.retry_after_seconds is not None:
+                cooldown = max(cooldown, timedelta(seconds=result.retry_after_seconds))
             self.repository.record_retail_provider_state(
                 name, health=result.health, successful=successful,
                 status=result.status_code, transport=result.transport, error=error,
-                observed_at=now, next_refresh_at=now + self.interval, region=region)
+                observed_at=now, next_refresh_at=now + cooldown,
+                region=result.region_context or region,
+                retrieval_method=result.retrieval_method,
+                last_observation_at=now if result.observations else None,
+                block_classification=result.block_classification,
+                retry_after_seconds=result.retry_after_seconds,
+                response_content_type=result.response_content_type,
+                response_size=result.response_size)
             output.append(RetailRefresh(name, result.health, result.candidates_found,
-                                        len(result.observations), error))
+                                        len(result.observations), error,
+                                        result.retrieval_method,
+                                        result.block_classification))
         return output
 
     def close(self) -> None:

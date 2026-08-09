@@ -25,6 +25,7 @@ class RetailPriceObservation:
     offer_id: str | None = None
     product_id: str | None = None
     seller_kind: str | None = None
+    conditional_price: int | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -38,6 +39,12 @@ class RetailRetrievalResult:
     candidates_found: int = 0
     raw_body: str | None = None
     final_url: str | None = None
+    retrieval_method: str = "search"
+    region_context: str | None = None
+    retry_after_seconds: int | None = None
+    block_classification: str = "none"
+    response_content_type: str | None = None
+    response_size: int | None = None
 
 
 @dataclass(slots=True, frozen=True)

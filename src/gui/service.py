@@ -197,7 +197,9 @@ class GuiService:
             states = {row["retailer"]: row for row in repository.retail_provider_states()}
         return [states.get(name, {"retailer": name, "health": "experimental",
                                   "last_success_at": None, "last_failure_at": None,
-                                  "next_refresh_at": None})
+                                  "next_refresh_at": None, "last_http_status": None,
+                                  "last_error": None, "retrieval_method": None,
+                                  "last_observation_at": None})
                 for name in ("dns", "ozon", "wildberries")]
 
     def trigger_retail_refresh(self, comparable_key: str, query: str) -> bool:

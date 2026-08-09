@@ -1,0 +1,18 @@
+{
+  "data": {
+    "products": [
+      {
+        "id": 101,
+        "name": "Видеокарта Gigabyte GeForce RTX 3060 12GB",
+        "supplierName": "Example Seller",
+        "sizes": [
+          {
+            "optionId": 1001,
+            "price": {"basic": 3000000, "product": 2500000, "total": 2300000},
+            "stocks": [{"qty": 2}]
+          }
+        ]
+      }
+    ]
+  }
+}
