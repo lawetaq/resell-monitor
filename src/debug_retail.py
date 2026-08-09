@@ -25,8 +25,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if not args.query and not (args.provider == "wildberries" and (args.url or args.product_id)):
-        raise SystemExit("--query is required unless a Wildberries --url or --product-id is supplied")
+    if not args.query and not args.url and not (args.provider == "wildberries" and args.product_id):
+        raise SystemExit("--query is required unless a mapped --url is supplied")
     from src.analytics import normalize_product
     query = args.query or args.key or ""
     key = args.key or normalize_product(query).comparable_key
@@ -56,8 +56,12 @@ def run(argv: list[str] | None = None) -> int:
                 "candidates_found": result.candidates_found,
                 "accepted_matches": len(result.observations),
                 "prices": [item.price for item in result.observations],
+                "conditional_prices": [item.conditional_price for item in result.observations
+                                       if item.conditional_price is not None],
                 "representative_price": _representative_price(result),
                 "product_ids": sorted({item.product_id for item in result.observations if item.product_id}),
+                "offer_ids": sorted({item.offer_id for item in result.observations if item.offer_id}),
+                "sellers": sorted({item.seller for item in result.observations if item.seller}),
                 "availability": sorted({item.availability for item in result.observations}),
                 "region": args.region, "region_context": result.region_context,
                 "retrieval_method": result.retrieval_method,
@@ -65,6 +69,8 @@ def run(argv: list[str] | None = None) -> int:
                 "retry_after_seconds": result.retry_after_seconds,
                 "response_content_type": result.response_content_type,
                 "response_size": result.response_size,
+                "redirect_classification": result.redirect_classification,
+                "redirect_chain": [_redirect_summary(hop) for hop in result.redirect_chain],
                 "error": result.error}
     (target / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     print(json.dumps(metadata, indent=2))
@@ -95,6 +101,17 @@ def _representative_price(result) -> int | None:
         return None
     middle = len(prices) // 2
     return prices[middle] if len(prices) % 2 else int(round((prices[middle - 1] + prices[middle]) / 2))
+
+
+def _redirect_summary(hop: object) -> dict[str, object]:
+    return {
+        "status": getattr(hop, "status_code", None),
+        "source": f"{getattr(hop, 'source_host', '')}{getattr(hop, 'source_path', '')}",
+        "destination": f"{getattr(hop, 'destination_host', '')}{getattr(hop, 'destination_path', '')}",
+        "added_query_names": getattr(hop, "added_query_names", ()),
+        "removed_query_names": getattr(hop, "removed_query_names", ()),
+        "set_cookie_names": getattr(hop, "cookie_names", ()),
+    }
 
 
 if __name__ == "__main__":

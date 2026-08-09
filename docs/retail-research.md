@@ -19,15 +19,38 @@ fingerprint randomization.
 ## Ozon
 
 - Official public APIs are seller/business APIs, not an anonymous buyer catalog API.
-- Consumer HTML can expose structured widget state, but endpoint and schema are
-  undocumented and therefore fragile.
-- A single controlled consumer-search request entered a repeated HTTP 307 redirect
-  sequence and was stopped. No retry was made.
-- Multiple third-party offers and seller identity matter; representative pricing
-  uses a median of exact credible offers.
-- Chosen path: persistent ordinary HTTP and embedded widget JSON parsing. Explicit
-  mapped product URLs are preferred.
-- Current status: **DEGRADED / experimental on this network**.
+- The canonical consumer host remains `www.ozon.ru`; search uses `/search/` and
+  product cards use `/product/<slug>-<numeric-id>/`. The numeric article in the
+  canonical product path is retained as mapping identity.
+- Consumer HTML can expose embedded JSON widget state. Search and mapped cards
+  are parsed from that state without undocumented API calls or JavaScript execution.
+  The schema remains undocumented and therefore fragile.
+- A bounded route diagnostic found that the first 307 stays on the same search
+  path and adds only the `__rr` routing parameter. With the ordinary anonymous
+  session retained, the next response was HTTP 403. The old automatic Requests
+  redirect handling hid this sequence; a bare 307 was not itself proof of blocking.
+- Ozon follows at most three redirects, stops before revisiting a URL, and records
+  only redirect host/path, changed query names, and Set-Cookie names. HTTP 401/403
+  and 429 are blocked; redirect cycles and 5xx are degraded; network errors fail;
+  HTTP 200 with no recognized product state is a schema change.
+- Current public cards visibly distinguish a lower Ozon Card/bank price from the
+  higher ordinary-payment price. The ordinary price is the retail reference;
+  card/bank price is conditional and stored separately. Original/list price is
+  separate and delivery is not folded into product price.
+- Seller, offer, and product IDs are retained when widget state exposes them.
+  Multiple compatible seller offers stay distinct and their representative is a
+  median. Strict normalized titles still reject incompatible variants.
+- Search is explicit discovery. A reviewed canonical product mapping is preferred
+  for scheduled monitoring; invalid or identity-mismatched mappings fail without
+  broad-search fallback.
+- No supported anonymous city/destination mechanism was established. The configured
+  region is not sent to Ozon; observations are labeled
+  `ozon_scope=default-unresolved`, not presented as Khabarovsk-specific.
+- Fixed ordinary browser headers and a persistent Requests session are used. No
+  curl/browser fallback was attempted after the explicit 403. There is no retry,
+  fingerprint rotation, account-cookie import, or challenge handling.
+- Current status: **BLOCKED ON TEST ROUTE / experimental**. Whether this execution
+  route is VPN or direct could not be determined.
 
 ## Wildberries
 

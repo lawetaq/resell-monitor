@@ -45,6 +45,8 @@ class RetailRetrievalResult:
     block_classification: str = "none"
     response_content_type: str | None = None
     response_size: int | None = None
+    redirect_chain: tuple[object, ...] = ()
+    redirect_classification: str = "none"
 
 
 @dataclass(slots=True, frozen=True)

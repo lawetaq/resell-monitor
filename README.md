@@ -152,6 +152,7 @@ They are not part of the offline test suite. Run them only deliberately:
 ```bash
 .venv/bin/python -m src.debug_retail dns --query "RTX 3060 12GB" --region Khabarovsk
 .venv/bin/python -m src.debug_retail ozon --query "RTX 3060 12GB" --region Khabarovsk
+.venv/bin/python -m src.debug_retail ozon --key 'gpu:rtx-3060:12gb' --url 'https://www.ozon.ru/product/example-1234567890/' --region Khabarovsk
 .venv/bin/python -m src.debug_retail wildberries --query "RTX 3060 12GB" --region Khabarovsk
 ```
 
@@ -159,6 +160,11 @@ Wildberries also accepts `--product-id <nmId>` for one exact mapped-card request
 Its numeric destination can be supplied without pretending the configured city
 name is itself a WB ID, for example `--region "Region name; wb_dest=-123"` after
 confirming the current destination value in a normal browser session.
+
+Ozon mapped diagnostics validate a canonical HTTPS product URL and make one
+bounded logical retrieval. Ozon search is intended for explicit discovery;
+scheduled monitoring should use a reviewed product mapping. Redirect diagnostics
+retain host/path, parameter names, and cookie names only—never their values.
 
 Use `--url` for an explicit mapped product page and `--output-dir` to change the
 diagnostic directory. Current provider research and limitations are documented
