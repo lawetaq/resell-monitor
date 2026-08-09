@@ -6,15 +6,64 @@ fingerprint randomization.
 
 ## DNS
 
-- Consumer search and product pages are HTML and may include JSON-LD product data.
-- A single controlled search request from this network returned HTTP 401 with a
-  Qrator challenge page. No retry was made.
+- Canonical cards use `/product/<16-character-path-id>/<slug>/` and visibly expose
+  a separate numeric `Код товара`. Catalog/search pages can expose exact model and
+  specification identity; direct mapped cards are lower traffic and less ambiguous.
+- Product HTML may include Product/Offer JSON-LD. Catalog cards are also supported
+  conservatively when explicit product, price, availability, old-price, or
+  promotional attributes are present. No undocumented structured endpoint was
+  established on the accessible route.
+- One ordinary mapped-product GET with fixed normal browser headers returned HTTP
+  401, `text/html`, 6,319 bytes, with an explicit Qrator marker before useful
+  product data. There was no redirect or Retry-After and no retry was made.
+- Because the permitted ordinary attempt produced an explicit challenge, no
+  curl_cffi or automated browser fallback was cascaded. VPN/direct route status
+  could not be determined.
+- Qrator/challenge content is classified as `BLOCKED/challenge` at any HTTP status,
+  including 200, and is never parsed as product HTML. HTTP 401/403 without a
+  challenge marker is access-blocked; 429 is rate-limited; 5xx is degraded;
+  network failure is failed; unknown HTTP 200 product structure is schema-changed.
+- Search remains an explicit discovery operation. If direct access becomes viable,
+  reviewed canonical product mappings are the monitoring path. Invalid mappings
+  fail without broad-search fallback.
+- The configured region is not sent to DNS because no reliable public locality
+  cookie/store-ID flow was established. Observations are labeled
+  `dns_scope=default-unresolved`, not represented as Khabarovsk-specific.
+- Normal price is the primary retail reference. Explicit old/list evidence is
+  separate. An explicitly lower promotional price is conditional until its terms
+  are known; delivery is not folded into product price. Unknown availability is
+  insufficient for ranking.
 - DNS has no documented public buyer/catalog API suitable for this application.
-- Price and stock are region-sensitive. The configured locality is stored with
-  every observation; it is not presented as a universal price.
-- Chosen path: persistent ordinary HTTP; JSON-LD/catalog-card parsing when normal
-  HTML is returned. Explicit mapped product URLs are preferred over search.
-- Current status: **BLOCKED / experimental on this network**.
+- Current status: **BLOCKED ON TEST ROUTE / experimental**.
+
+### Browser-assisted feasibility
+
+The repository already has Playwright persistent-context, headed-mode, and
+network-response capture primitives for Avito, but that implementation is
+Avito-specific and should not be reused by pretending retail sites share its
+selectors or response schemas. A future shared retail browser layer is feasible:
+
+1. A local headed persistent Chromium profile is created under ignored
+   `data/playwright/retail/` storage.
+2. The user performs ordinary navigation, challenge completion if offered by the
+   site, and locality selection. The application never automates CAPTCHA solving.
+3. A provider-neutral capture layer exposes sanitized already-loaded HTML and
+   first-party response data to DNS/Ozon/Wildberries adapters.
+4. Provider adapters retain their own identity, price, availability, and schema
+   interpretation. Reviewed mappings minimize later discovery navigation.
+5. Market reads remain database-only. Browser activity occurs only through an
+   explicit diagnostic/discovery/refresh workflow and observes provider cooldowns.
+
+This avoids three independent anti-bot transport stacks and remains local and
+user-controlled. Profiles, cookies, local storage, screenshots, and raw captures
+must remain ignored and outside exports; diagnostics may retain only sanitized
+fixtures. Desktop packaging would need a managed Chromium installation, explicit
+profile lifecycle/locking, visible user consent, and clear profile-reset controls.
+
+**Decision: C — keep DNS BLOCKED and implement a shared browser-assisted retail
+layer next.** Ordinary DNS HTTP is not maintainable on the tested route, while
+postponing all retail work would discard useful mapped/history architecture and
+the same access constraint already affects Ozon and Wildberries.
 
 ## Ozon
 

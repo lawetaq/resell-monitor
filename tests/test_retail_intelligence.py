@@ -35,7 +35,7 @@ class RetailParserTests(unittest.TestCase):
             "@type":"Product","name":"Видеокарта Palit RTX 3060 12GB",
             "sku":"42","url":"/product/42","offers":{"price":"24990","availability":"https://schema.org/InStock"}})+'</script>'
         rows = parse_dns(html)
-        self.assertEqual(rows[0]["price"], "24990")
+        self.assertEqual(rows[0]["price"], 24990)
         self.assertTrue(exact_match(KEY, str(rows[0]["title"]))[0])
 
     def test_ozon_embedded_widget_multiple_offers(self) -> None:

@@ -151,6 +151,7 @@ They are not part of the offline test suite. Run them only deliberately:
 
 ```bash
 .venv/bin/python -m src.debug_retail dns --query "RTX 3060 12GB" --region Khabarovsk
+.venv/bin/python -m src.debug_retail dns --key 'gpu:rtx-3060:12gb' --url 'https://www.dns-shop.ru/product/0123456789abcdef/example-product/' --region Khabarovsk
 .venv/bin/python -m src.debug_retail ozon --query "RTX 3060 12GB" --region Khabarovsk
 .venv/bin/python -m src.debug_retail ozon --key 'gpu:rtx-3060:12gb' --url 'https://www.ozon.ru/product/example-1234567890/' --region Khabarovsk
 .venv/bin/python -m src.debug_retail wildberries --query "RTX 3060 12GB" --region Khabarovsk
@@ -165,6 +166,12 @@ Ozon mapped diagnostics validate a canonical HTTPS product URL and make one
 bounded logical retrieval. Ozon search is intended for explicit discovery;
 scheduled monitoring should use a reviewed product mapping. Redirect diagnostics
 retain host/path, parameter names, and cookie names only—never their values.
+
+DNS mapped diagnostics likewise require a canonical `/product/<id>/<slug>/`
+HTTPS URL. DNS currently presents a Qrator challenge on the tested route, so its
+ordinary HTTP provider remains blocked/experimental. The configured region is
+recorded as unresolved scope unless a future normal consumer path provides
+verifiable DNS locality context.
 
 Use `--url` for an explicit mapped product page and `--output-dir` to change the
 diagnostic directory. Current provider research and limitations are documented
