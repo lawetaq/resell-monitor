@@ -26,6 +26,7 @@ class RetailPriceObservation:
     product_id: str | None = None
     seller_kind: str | None = None
     conditional_price: int | None = None
+    retrieval_method: str = "http"
 
 
 @dataclass(slots=True, frozen=True)

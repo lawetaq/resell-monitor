@@ -36,34 +36,48 @@ fingerprint randomization.
 - DNS has no documented public buyer/catalog API suitable for this application.
 - Current status: **BLOCKED ON TEST ROUTE / experimental**.
 
-### Browser-assisted feasibility
+### Browser-assisted retail v1
 
-The repository already has Playwright persistent-context, headed-mode, and
-network-response capture primitives for Avito, but that implementation is
-Avito-specific and should not be reused by pretending retail sites share its
-selectors or response schemas. A future shared retail browser layer is feasible:
+The repository now has a provider-neutral, explicit browser-assisted layer. It
+reuses Playwright concepts proven by Avito—persistent context, a headed browser,
+HTML capture, response listeners, and reliable closure—but does not import
+Avito-specific selectors, host assumptions, or parsers.
 
-1. A local headed persistent Chromium profile is created under ignored
-   `data/playwright/retail/` storage.
+1. A local headed persistent Firefox (default) or Chromium context uses its own
+   ignored, dedicated `data/playwright/retail-<engine>-profile/` profile.
 2. The user performs ordinary navigation, challenge completion if offered by the
    site, and locality selection. The application never automates CAPTCHA solving.
-3. A provider-neutral capture layer exposes sanitized already-loaded HTML and
-   first-party response data to DNS/Ozon/Wildberries adapters.
-4. Provider adapters retain their own identity, price, availability, and schema
+3. A worker-thread-owned service keeps Playwright objects on their creating
+   thread, allows one tab per retailer, and exposes only explicit open/navigation/
+   capture/close commands. Capture never reloads the page.
+4. Narrow response listeners retain at most 50 relevant JSON payloads per tab,
+   cap individual captured structures at 2 MB, remove sensitive-shaped keys, and
+   retain only known identity/region query fields.
+5. Provider-neutral snapshots expose already-loaded HTML and sanitized first-party
+   responses to DNS/Ozon/Wildberries adapters.
+6. Provider adapters retain their own identity, price, availability, and schema
    interpretation. Reviewed mappings minimize later discovery navigation.
-5. Market reads remain database-only. Browser activity occurs only through an
+7. Market reads remain database-only. Browser activity occurs only through an
    explicit diagnostic/discovery/refresh workflow and observes provider cooldowns.
 
-This avoids three independent anti-bot transport stacks and remains local and
-user-controlled. Profiles, cookies, local storage, screenshots, and raw captures
-must remain ignored and outside exports; diagnostics may retain only sanitized
-fixtures. Desktop packaging would need a managed Chromium installation, explicit
-profile lifecycle/locking, visible user consent, and clear profile-reset controls.
+The GUI exposes mapping create/edit/delete, explicit browser launch/close,
+single-mapping navigation, and capture. Mapping identity and exact normalized
+product identity must both pass before storage. A manually typed region is stored
+as `source=browser-confirmed`; blank region remains `default-unresolved`. WB may
+add an observed `dest` from a naturally loaded first-party response.
 
-**Decision: C — keep DNS BLOCKED and implement a shared browser-assisted retail
-layer next.** Ordinary DNS HTTP is not maintainable on the tested route, while
-postponing all retail work would discard useful mapped/history architecture and
-the same access constraint already affects Ozon and Wildberries.
+Browser-assisted health is stored separately from HTTP health, and observations
+record `retrieval_method=browser-assisted`. Schema v6 adds only this observation
+field and a per-method health table. Browser profiles, cookies, local storage,
+screenshots, and raw captures remain ignored and outside SQLite/exports.
+
+This avoids three independent anti-bot transport stacks and remains local and
+user-controlled. Desktop packaging still needs managed Chromium installation,
+profile lifecycle/locking, visible user consent, and profile-reset controls.
+
+HTTP providers remain available as diagnostics. Browser-assisted v1 is manual;
+it does not schedule multi-product crawling, automate challenges, log in, or
+perform hidden provider requests.
 
 ## Ozon
 

@@ -103,6 +103,13 @@ def create_handler(service: GuiService) -> type[BaseHTTPRequestHandler]:
                 self._json(HTTPStatus.OK, service.settings())
             elif parsed.path == "/api/retail/health":
                 self._json(HTTPStatus.OK, service.retail_health())
+            elif parsed.path == "/api/retail/browser":
+                self._json(HTTPStatus.OK, service.retail_browser_status())
+            elif parsed.path == "/api/retail/mappings":
+                key = query.get("comparable_key", "")
+                if not key:
+                    raise ValueError("comparable_key is required")
+                self._json(HTTPStatus.OK, service.retail_mappings(key))
             elif parsed.path == "/api/market":
                 self._json(
                     HTTPStatus.OK,
@@ -165,6 +172,36 @@ def create_handler(service: GuiService) -> type[BaseHTTPRequestHandler]:
                 payload = self._body()
                 self._json(HTTPStatus.ACCEPTED, {"started": service.trigger_retail_refresh(
                     str(payload["comparable_key"]), str(payload.get("query") or payload["comparable_key"]))})
+            elif path == "/api/retail/browser/open":
+                self._json(HTTPStatus.OK, service.open_retail_browser())
+            elif path == "/api/retail/browser/engine":
+                payload = self._body()
+                self._json(HTTPStatus.OK, service.set_retail_browser_engine(
+                    str(payload["engine"])))
+            elif path == "/api/retail/browser/close":
+                self._json(HTTPStatus.OK, service.close_retail_browser())
+            elif path == "/api/retail/browser/reset":
+                self._json(HTTPStatus.OK, service.reset_retail_browser_profile(
+                    confirmed=bool(self._body().get("confirmed"))))
+            elif path == "/api/retail/mapping":
+                payload = self._body()
+                self._json(HTTPStatus.OK, service.save_retail_mapping(
+                    str(payload["comparable_key"]), str(payload["retailer"]),
+                    str(payload["product_url"])))
+            elif path == "/api/retail/mapping/delete":
+                payload = self._body()
+                service.delete_retail_mapping(str(payload["comparable_key"]),
+                                              str(payload["retailer"]))
+                self._json(HTTPStatus.OK, {"deleted": True})
+            elif path == "/api/retail/browser/navigate":
+                payload = self._body()
+                self._json(HTTPStatus.OK, service.open_retail_mapping(
+                    str(payload["comparable_key"]), str(payload["retailer"])))
+            elif path == "/api/retail/browser/capture":
+                payload = self._body()
+                self._json(HTTPStatus.OK, service.capture_retail_mapping(
+                    str(payload["comparable_key"]), str(payload["retailer"]),
+                    confirmed_region=str(payload.get("confirmed_region") or "") or None))
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
 

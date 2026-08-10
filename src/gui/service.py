@@ -17,6 +17,8 @@ from src.scheduler import SearchScheduler
 from src.storage import ListingRepository, SearchAccessState
 from src.retail_monitor import RetailMonitor
 from src.retail_providers import DnsRetailProvider, OzonRetailProvider, WildberriesRetailProvider
+from src.retail_browser import RetailBrowserService, status_payload
+from src.retail_browser_adapters import ADAPTERS
 
 ScanRunner = Callable[[list[SearchConfig], Callable[[str], None]], list[SourceScan]]
 LOGGER = logging.getLogger(__name__)
@@ -33,6 +35,8 @@ class GuiService:
         output_dir: Path,
         debug_dir: Path | None = None,
         scan_runner: ScanRunner | None = None,
+        retail_browser: RetailBrowserService | None = None,
+        retail_profile_dir: Path | None = None,
     ) -> None:
         self.config_path = config_path
         self.database_path = database_path
@@ -49,6 +53,9 @@ class GuiService:
         self._last_scan_at: datetime | None = None
         self._last_error: str | None = None
         self._scheduler = SearchScheduler()
+        self._retail_browser = retail_browser or RetailBrowserService(
+            profile_root=retail_profile_dir or self.database_path.parent / "playwright"
+        )
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         with ListingRepository(self.database_path):
@@ -195,12 +202,130 @@ class GuiService:
     def retail_health(self) -> list[dict[str, object]]:
         with ListingRepository(self.database_path) as repository:
             states = {row["retailer"]: row for row in repository.retail_provider_states()}
-        return [states.get(name, {"retailer": name, "health": "experimental",
+            method_states = {
+                (row["retailer"], row["retrieval_method"]): row
+                for row in repository.retail_provider_method_states()
+            }
+        output = [states.get(name, {"retailer": name, "health": "experimental",
                                   "last_success_at": None, "last_failure_at": None,
                                   "next_refresh_at": None, "last_http_status": None,
                                   "last_error": None, "retrieval_method": None,
                                   "last_observation_at": None})
-                for name in ("dns", "ozon", "wildberries")]
+                  for name in ("dns", "ozon", "wildberries")]
+        for row in output:
+            name = str(row["retailer"])
+            row["method_states"] = {
+                "http": dict(row),
+                "browser-assisted": method_states.get((name, "browser-assisted")),
+            }
+        return output
+
+    def retail_browser_status(self) -> dict[str, object]:
+        return status_payload(self._retail_browser.status())
+
+    def open_retail_browser(self) -> dict[str, object]:
+        self._retail_browser.open()
+        return self.retail_browser_status()
+
+    def set_retail_browser_engine(self, engine: str) -> dict[str, object]:
+        self._retail_browser.set_engine(engine)
+        return self.retail_browser_status()
+
+    def close_retail_browser(self) -> dict[str, object]:
+        self._retail_browser.close()
+        return self.retail_browser_status()
+
+    def reset_retail_browser_profile(self, *, confirmed: bool) -> dict[str, object]:
+        if not confirmed:
+            raise ValueError("profile reset requires explicit confirmation")
+        removed = self._retail_browser.reset_profile()
+        return {"removed": removed, **self.retail_browser_status()}
+
+    def retail_mappings(self, comparable_key: str) -> list[dict[str, object]]:
+        with ListingRepository(self.database_path) as repository:
+            saved = {str(row["retailer"]): row
+                     for row in repository.retail_mappings(comparable_key)}
+            output: list[dict[str, object]] = []
+            for name in ("dns", "ozon", "wildberries"):
+                row = saved.get(name)
+                url = str(row["product_url"]) if row else None
+                validation = "unmapped"
+                product_id = None
+                if url:
+                    try:
+                        _, product_id = ADAPTERS[name].validate_url(url)
+                        validation = "valid"
+                    except ValueError:
+                        validation = "invalid"
+                latest = repository.latest_retail_observation(
+                    comparable_key, name, retrieval_method="browser-assisted"
+                )
+                output.append({
+                    "retailer": name, "comparable_key": comparable_key,
+                    "product_url": url, "product_id": product_id,
+                    "validation": validation,
+                    "last_observation": latest,
+                })
+        return output
+
+    def save_retail_mapping(self, comparable_key: str, retailer: str,
+                            product_url: str) -> dict[str, object]:
+        if retailer not in ADAPTERS:
+            raise ValueError(f"unsupported retailer: {retailer}")
+        valid_url, product_id = ADAPTERS[retailer].validate_url(product_url.strip())
+        with ListingRepository(self.database_path) as repository:
+            repository.set_retail_mapping(comparable_key, retailer, valid_url, product_id)
+        return next(row for row in self.retail_mappings(comparable_key)
+                    if row["retailer"] == retailer)
+
+    def delete_retail_mapping(self, comparable_key: str, retailer: str) -> None:
+        if retailer not in ADAPTERS:
+            raise ValueError(f"unsupported retailer: {retailer}")
+        with ListingRepository(self.database_path) as repository:
+            repository.delete_retail_mapping(comparable_key, retailer)
+
+    def open_retail_mapping(self, comparable_key: str, retailer: str) -> dict[str, object]:
+        mapping = self._mapping(comparable_key, retailer)
+        return self._retail_browser.navigate(retailer, str(mapping["product_url"]))
+
+    def capture_retail_mapping(
+        self, comparable_key: str, retailer: str,
+        *, confirmed_region: str | None = None,
+    ) -> dict[str, object]:
+        mapping = self._mapping(comparable_key, retailer)
+        snapshot = self._retail_browser.capture(retailer)
+        result = ADAPTERS[retailer].capture(
+            snapshot, comparable_key, str(mapping["product_url"]),
+            confirmed_region=confirmed_region,
+        )
+        now = datetime.now(timezone.utc)
+        successful = result.status == "captured" and bool(result.observations)
+        with ListingRepository(self.database_path) as repository:
+            for observation in result.observations:
+                repository.add_retail_observation(observation)  # type: ignore[arg-type]
+            repository.record_retail_method_state(
+                retailer, "browser-assisted",
+                health="healthy" if successful else "blocked" if result.status == "challenge" else "degraded",
+                successful=successful, observed_at=now, error=result.error,
+                region=result.region_context, has_observation=bool(result.observations),
+            )
+        return {
+            "retailer": retailer, "status": result.status, "error": result.error,
+            "region_context": result.region_context,
+            "candidates_found": result.candidates_found,
+            "observations": [asdict(item) for item in result.observations],
+        }
+
+    def _mapping(self, comparable_key: str, retailer: str) -> dict[str, object]:
+        if retailer not in ADAPTERS:
+            raise ValueError(f"unsupported retailer: {retailer}")
+        with ListingRepository(self.database_path) as repository:
+            row = next((row for row in repository.retail_mappings(comparable_key)
+                        if row["retailer"] == retailer), None)
+        if row is None:
+            raise KeyError(f"no {retailer} mapping for {comparable_key}")
+        ADAPTERS[retailer].validate_url(str(row["product_url"]))
+        return row
 
     def trigger_retail_refresh(self, comparable_key: str, query: str) -> bool:
         return self._trigger_retail_refresh(comparable_key, query, None)
@@ -486,6 +611,7 @@ class GuiService:
 
     def close(self) -> None:
         self.stop_monitoring()
+        self._retail_browser.close()
 
     def _run_scans(self, searches: list[SearchConfig]) -> list[SourceScan]:
         runner = self._external_scan_runner or self._default_scan_runner

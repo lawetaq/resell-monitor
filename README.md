@@ -67,11 +67,14 @@ The example searches are disabled. Review their URLs and filters, then enable
 only the searches you intend to run. `searches.json` is local configuration and
 is intentionally ignored by Git.
 
-If Playwright fallback is needed, install its Chromium build separately:
+For the default Browser-Assisted Retail engine, install Playwright Firefox separately:
 
 ```bash
-.venv/bin/python -m playwright install chromium
+.venv/bin/python -m playwright install firefox
 ```
+
+Chromium remains available as an explicit alternative via
+`.venv/bin/python -m playwright install chromium`.
 
 ## Running the GUI
 
@@ -93,6 +96,25 @@ and `--port`. See all options with:
 ```bash
 .venv/bin/python -m src.gui.app --help
 ```
+
+### Browser-assisted retail
+
+Browser-assisted capture is manual and opt-in. Install Playwright Firefox, run
+the GUI normally, select a normalized product on Market, then use the
+**Browser-assisted retail** panel:
+
+1. Save a canonical DNS, Ozon, or Wildberries product URL.
+2. Select Firefox (recommended) or Chromium, then click **Open browser**. Each
+   engine uses its own dedicated local profile under `data/playwright/`.
+3. Click the mapping's **Open** button. Complete normal region selection, dialogs,
+   or a site challenge yourself if necessary.
+4. Optionally enter a region only after confirming it in the visible site.
+5. Click **Capture**. Capture inspects the already-loaded page and relevant
+   first-party JSON responses; it makes no hidden HTTP request or reload.
+
+Market page loads and searches never launch a retail browser. Browser capture is not a
+CAPTCHA solver, stealth transport, or scheduled crawler. **Reset profile** closes
+the retail browser and deletes only its dedicated profile after confirmation.
 
 ## Running the backend
 
@@ -129,6 +151,8 @@ Default runtime paths, relative to the working directory, are:
 
 - Database and app settings: `data/resell-monitor.db`
 - Persistent Playwright data: `data/playwright/`
+- Browser-assisted Firefox profile: `data/playwright/retail-firefox-profile/`
+- Browser-assisted Chromium profile: `data/playwright/retail-chromium-profile/`
 - User search configuration: `searches.json`
 - Reports and source diagnostics: `output/`
 - Retail diagnostics: `debug/retail/`

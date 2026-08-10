@@ -39,7 +39,7 @@ class SearchAccessState:
 
 
 class ListingRepository:
-    SCHEMA_VERSION = 5
+    SCHEMA_VERSION = 6
     ANALYTICS_BACKFILL_VERSION = 1
 
     def __init__(self, path: str | Path, *, freshness_policy: FreshnessPolicy | None = None) -> None:
@@ -78,6 +78,8 @@ class ListingRepository:
                 self._migrate_availability_v4()
             if version < 5:
                 self._migrate_wildberries_v5()
+            if version < 6:
+                self._migrate_retail_browser_v6()
             self.connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
             self.connection.commit()
         except BaseException:
@@ -270,6 +272,18 @@ class ListingRepository:
             ("response_size", "INTEGER"),
         ):
             self._ensure_column("retail_provider_state", column, definition)
+
+    def _migrate_retail_browser_v6(self) -> None:
+        self._ensure_column(
+            "retail_price_observations", "retrieval_method",
+            "TEXT NOT NULL DEFAULT 'http'",
+        )
+        self.connection.execute("""CREATE TABLE IF NOT EXISTS retail_provider_method_state (
+            retailer TEXT NOT NULL, retrieval_method TEXT NOT NULL,
+            health TEXT NOT NULL, last_success_at TEXT, last_failure_at TEXT,
+            last_observation_at TEXT, last_error TEXT, region TEXT,
+            PRIMARY KEY(retailer,retrieval_method)
+        )""")
 
     def upsert(self, listing: Listing, *, observed_at: datetime | None = None) -> UpsertOutcome:
         timestamp = (observed_at or datetime.now(timezone.utc)).isoformat()
@@ -847,7 +861,7 @@ class ListingRepository:
         fingerprint = hashlib.sha256("\x1f".join((
             observation.comparable_key, observation.retailer, identity,
             str(observation.price), observation.region or "",
-            observation.availability,
+            observation.availability, observation.retrieval_method,
         )).encode()).hexdigest()
         timestamp = observation.observed_at.isoformat()
         with self.connection:
@@ -856,15 +870,16 @@ class ListingRepository:
                    comparable_key,retailer,price,observed_at,url,product_title,
                    normalized_model,original_price,seller,marketplace,availability,
                    region,match_confidence,delivery_price,offer_id,product_id,
-                   seller_kind,fingerprint,last_seen_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   seller_kind,fingerprint,last_seen_at,retrieval_method)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (observation.comparable_key, observation.retailer, observation.price,
                  timestamp, observation.url, observation.product_title,
                  observation.normalized_model, observation.original_price,
                  observation.seller, observation.marketplace, observation.availability,
                  observation.region, observation.match_confidence,
                  observation.delivery_price, observation.offer_id,
-                 observation.product_id, observation.seller_kind, fingerprint, timestamp),
+                 observation.product_id, observation.seller_kind, fingerprint, timestamp,
+                 observation.retrieval_method),
             )
             if cursor.rowcount == 0:
                 self.connection.execute(
@@ -882,6 +897,22 @@ class ListingRepository:
             "SELECT * FROM retail_price_observations WHERE comparable_key=? ORDER BY observed_at",
             (comparable_key,),
         )]
+
+    def latest_retail_observation(
+        self, comparable_key: str, retailer: str,
+        *, retrieval_method: str | None = None,
+    ) -> dict[str, object] | None:
+        clause = " AND retrieval_method=?" if retrieval_method else ""
+        parameters: tuple[object, ...] = (
+            (comparable_key, retailer, retrieval_method)
+            if retrieval_method else (comparable_key, retailer)
+        )
+        row = self.connection.execute(
+            "SELECT * FROM retail_price_observations WHERE comparable_key=? "
+            f"AND retailer=?{clause} ORDER BY observed_at DESC,id DESC LIMIT 1",
+            parameters,
+        ).fetchone()
+        return dict(row) if row else None
 
     def retail_summary(self, comparable_key: str, *, stale_hours: int = 48,
                        now: datetime | None = None) -> dict[str, object] | None:
@@ -977,6 +1008,33 @@ class ListingRepository:
         return [dict(row) for row in self.connection.execute(
             "SELECT * FROM retail_provider_state ORDER BY retailer")]
 
+    def record_retail_method_state(
+        self, retailer: str, retrieval_method: str, *, health: str,
+        successful: bool, observed_at: datetime, error: str | None,
+        region: str | None, has_observation: bool,
+    ) -> None:
+        success = observed_at.isoformat() if successful else None
+        failure = None if successful else observed_at.isoformat()
+        observation = observed_at.isoformat() if has_observation else None
+        with self.connection:
+            self.connection.execute("""INSERT INTO retail_provider_method_state(
+                retailer,retrieval_method,health,last_success_at,last_failure_at,
+                last_observation_at,last_error,region) VALUES (?,?,?,?,?,?,?,?)
+                ON CONFLICT(retailer,retrieval_method) DO UPDATE SET
+                health=excluded.health,
+                last_success_at=COALESCE(excluded.last_success_at,retail_provider_method_state.last_success_at),
+                last_failure_at=COALESCE(excluded.last_failure_at,retail_provider_method_state.last_failure_at),
+                last_observation_at=COALESCE(excluded.last_observation_at,retail_provider_method_state.last_observation_at),
+                last_error=excluded.last_error,region=excluded.region""",
+                (retailer, retrieval_method, health, success, failure, observation,
+                 error, region),
+            )
+
+    def retail_provider_method_states(self) -> list[dict[str, object]]:
+        return [dict(row) for row in self.connection.execute(
+            "SELECT * FROM retail_provider_method_state ORDER BY retailer,retrieval_method"
+        )]
+
     def set_retail_mapping(self, comparable_key: str, retailer: str,
                            product_url: str, product_id: str | None = None) -> None:
         with self.connection:
@@ -992,6 +1050,13 @@ class ListingRepository:
         else:
             rows = self.connection.execute("SELECT * FROM retail_product_mappings WHERE enabled=1")
         return [dict(row) for row in rows]
+
+    def delete_retail_mapping(self, comparable_key: str, retailer: str) -> None:
+        with self.connection:
+            self.connection.execute(
+                "DELETE FROM retail_product_mappings WHERE comparable_key=? AND retailer=?",
+                (comparable_key, retailer),
+            )
 
     def listing_rows(
         self,
