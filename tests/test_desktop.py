@@ -162,7 +162,11 @@ class DesktopShellTests(unittest.TestCase):
         self.assertIn("/desktop/", str(positional[1]))
         self.assertEqual(options["min_size"], (1100, 700))
         self.assertTrue(options["resizable"])
-        self.assertEqual(fake.starts, [{"debug": False}])
+        self.assertEqual(fake.starts[0]["debug"], False)
+        self.assertEqual(
+            fake.starts[0]["icon"],
+            str(Path(__file__).parents[1] / "assets/branding/resell-monitor-256.png"),
+        )
 
     def test_desktop_reuses_language_theme_and_listing_image_frontend(self) -> None:
         app = (Path(__file__).parents[1] / "src/gui/static/app.js").read_text()

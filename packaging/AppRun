@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+appdir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+executable="$appdir/usr/bin/ResellMonitor"
+
+if [ ! -x "$executable" ]; then
+    echo "Bundled Resell Monitor executable is missing: $executable" >&2
+    exit 127
+fi
+
+exec "$executable" "$@"

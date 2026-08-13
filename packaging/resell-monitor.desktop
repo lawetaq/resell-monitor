@@ -3,6 +3,7 @@ Type=Application
 Name=Resell Monitor
 Comment=Local marketplace monitoring and resale analytics
 Exec=ResellMonitor
+Icon=resell-monitor
 Terminal=false
 Categories=Utility;
 StartupNotify=true

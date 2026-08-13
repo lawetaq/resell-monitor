@@ -8,6 +8,7 @@ project_root = spec_dir.parent
 datas = [
     (str(project_root / "src" / "gui" / "static"), "src/gui/static"),
     (str(project_root / "src" / "location_registry.json"), "src"),
+    (str(project_root / "assets" / "branding"), "assets/branding"),
 ]
 
 analysis = Analysis(

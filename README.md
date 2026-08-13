@@ -156,6 +156,84 @@ desktop-entry template. Its `Exec` value must be adjusted or installed together
 with the final bundle by a later installer; builds and tests do not modify the
 user's application menu.
 
+### AppImage distribution (Linux x86_64)
+
+AppImage packaging wraps the validated PyInstaller ONEDIR bundle; it does not
+create a second application implementation. Obtain the official x86_64
+`appimagetool` separately, make it executable, and provide its absolute path:
+
+```bash
+chmod +x /absolute/path/to/appimagetool-x86_64.AppImage
+APPIMAGETOOL=/absolute/path/to/appimagetool-x86_64.AppImage \
+  PYTHON=.venv/bin/python scripts/build_appimage.sh
+```
+
+The script fails without downloading anything when `appimagetool` is missing.
+It rebuilds the ONEDIR package, assembles
+`build/appimage/ResellMonitor.AppDir/`, and writes the versioned artifact:
+
+```text
+dist/ResellMonitor-0.1.0-x86_64.AppImage
+```
+
+The version is read from `src/version.py`; the filename above is illustrative
+for the current version. `APPIMAGETOOL=appimagetool` is unnecessary when the
+tool is already on `PATH`.
+
+`AppRun` locates the read-only mounted AppDir from its own path and executes the
+bundled ONEDIR binary. It does not redirect configuration or data into the mount,
+the AppImage directory, or the caller's working directory. Frozen application
+data therefore continues to use the stable platformdirs locations documented
+below, independent of application version or AppImage filename.
+
+AppImage improves distribution convenience but does not guarantee universal
+Linux portability. The build retains the ONEDIR bundle's glibc, Qt WebEngine,
+Qt platform-plugin, graphics-driver, and display-server compatibility limits.
+Normal AppImage execution may require FUSE. Standard AppImage runtimes generally
+support `--appimage-extract-and-run` on hosts without FUSE; verify that mode with
+the produced artifact during acceptance rather than assuming every runtime and
+distribution supports it.
+
+#### Linux runtime diagnostics
+
+Qt WebEngine probes available Chromium/Qt graphics backends during startup. On
+systems with more than one render node or an incompatible Vulkan device, it may
+print a `VK_ERROR_INCOMPATIBLE_DRIVER` message while selecting a usable backend.
+If the Resell Monitor window renders normally, this is a non-fatal probe/fallback
+diagnostic. Hardware acceleration is intentionally left enabled; do not set
+`--disable-gpu` merely to silence it. Investigate only if the window is blank,
+corrupted, or crashes, using Qt's `qt.webenginecontext` and
+`qt.webengine.compositor` logging categories to identify the active renderer.
+
+Some pywebview/Qt combinations also print `Release of profile requested but
+WebEnginePage still not deleted` at process exit. pywebview schedules its
+`QWebEnginePage` with `deleteLater()` and then exits the Qt event loop, so Qt can
+emit this warning if deferred deletion has not completed before its private
+profile is released. Resell Monitor performs no Qt profile management itself.
+When the process exits, the loopback listener closes, and no Chromium or
+ResellMonitor process remains, the message is a shutdown-order diagnostic rather
+than evidence that application data or server resources were left active.
+Suppressing it would require depending on pywebview's private Qt objects, which
+the application intentionally avoids.
+
+For acceptance, capture the repository artifact path before changing directory
+or use an absolute path. This avoids referring to `dist/` from `/tmp`:
+
+```bash
+artifact="$(pwd)/dist/ResellMonitor-0.1.0-x86_64.AppImage"
+cp "$artifact" /tmp/ResellMonitor-0.1.0-x86_64.AppImage
+cd /tmp
+./ResellMonitor-0.1.0-x86_64.AppImage
+```
+
+After closing the window, these checks should return no matching process and no
+listening Resell Monitor socket respectively:
+
+```bash
+pgrep -af 'ResellMonitor|QtWebEngineProcess'
+ss -ltnp | grep ResellMonitor
+```
+
 ### Browser-assisted retail
 
 Browser-assisted capture is manual and opt-in. Install Playwright Firefox, run

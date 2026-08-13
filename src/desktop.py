@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 import webbrowser
 
 from src.gui.app import GuiServer, create_server
-from src.resources import is_frozen
+from src.resources import is_frozen, resource_path
 from src.user_paths import UserPaths, prepare_installed_user_data
 
 
@@ -198,6 +198,7 @@ def launch_desktop(args: argparse.Namespace, webview: ModuleType) -> int:
             js_api=bridge,
         )
         options: dict[str, object] = {"debug": bool(args.debug)}
+        options["icon"] = str(resource_path("assets/branding/resell-monitor-256.png"))
         if args.gui:
             options["gui"] = args.gui
         webview.start(**options)

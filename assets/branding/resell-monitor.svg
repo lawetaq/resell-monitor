@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Resell Monitor</title>
+  <rect width="512" height="512" rx="104" fill="#101211"/>
+  <rect x="28" y="28" width="456" height="456" rx="82" fill="#161917" stroke="#3A413C" stroke-width="8"/>
+  <g fill="#353B37">
+    <rect x="109.5" y="96" width="5" height="320"/><rect x="205.5" y="96" width="5" height="320"/>
+    <rect x="301.5" y="96" width="5" height="320"/><rect x="397.5" y="96" width="5" height="320"/>
+    <rect x="96" y="109.5" width="320" height="5"/><rect x="96" y="205.5" width="320" height="5"/>
+    <rect x="96" y="301.5" width="320" height="5"/><rect x="96" y="397.5" width="320" height="5"/>
+  </g>
+  <g fill="#E8EBE7">
+    <polygon points="112,359 204,271 188,253 96,341"/>
+    <polygon points="189,272 259,322 273,302 203,252"/>
+    <polygon points="275,320 405,170 387,154 257,304"/>
+    <circle cx="104" cy="350" r="12"/><circle cx="196" cy="262" r="12"/><circle cx="266" cy="312" r="12"/>
+  </g>
+  <circle cx="396" cy="162" r="22" fill="#E8EBE7"/>
+</svg>

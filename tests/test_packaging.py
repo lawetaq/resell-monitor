@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import sqlite3
+import stat
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
@@ -13,6 +14,7 @@ from src.resources import resource_path
 from src.storage.sqlite import ListingRepository
 from src.user_paths import UserPaths, prepare_installed_user_data
 from src.version import __version__
+from scripts.assemble_appdir import assemble_appdir
 
 
 def _args(**overrides: object) -> argparse.Namespace:
@@ -207,6 +209,7 @@ class PackagingContractTests(unittest.TestCase):
             self.assertNotEqual(source_path.parent, root.resolve().parent)
         self.assertIn('"src" / "gui" / "static"', spec)
         self.assertIn('"src" / "location_registry.json"', spec)
+        self.assertIn('"assets" / "branding"', spec)
         self.assertIn('"webview.platforms.qt"', spec)
         self.assertNotIn("/home/", spec)
         self.assertNotIn("searches.json", spec)
@@ -218,6 +221,80 @@ class PackagingContractTests(unittest.TestCase):
         build_requirements = (root / "requirements-build.txt").read_text()
         self.assertIn("pyinstaller>=6,<7", build_requirements)
         self.assertIn("-r requirements-desktop.txt", build_requirements)
+
+    def test_branding_contract_uses_one_accessible_token_driven_mark(self) -> None:
+        root = Path(__file__).parents[1]
+        index = (root / "src/gui/static/index.html").read_text()
+        css = (root / "src/gui/static/styles.css").read_text()
+        brand = index.split('<div class="brand">', 1)[1].split("</div></div>", 1)[0]
+        self.assertNotIn('<span class="brand-mark">R</span>', index)
+        self.assertIn('<svg viewBox="0 0 30 30"', brand)
+        self.assertIn('aria-hidden="true"', brand)
+        self.assertIn('class="brand-line"', brand)
+        self.assertIn('class="brand-dot"', brand)
+        for token in ("--brand-surface", "--brand-border", "--brand-grid", "--brand-line"):
+            self.assertIn(token, css)
+        self.assertIn("[data-mode=\"dark\"]", css)
+        self.assertIn("[data-mode=\"light\"]", css)
+        self.assertNotIn("#77a0a0", css[css.index("/* Theme-aware brand geometry"):])
+        for size in (32, 48, 64, 128, 256, 512):
+            self.assertTrue((root / f"assets/branding/resell-monitor-{size}.png").is_file())
+        self.assertTrue((root / "assets/branding/resell-monitor.svg").is_file())
+
+    def test_appimage_contract_wraps_onedir_without_mutable_state(self) -> None:
+        root = Path(__file__).parents[1]
+        app_run = root / "packaging/AppRun"
+        desktop_entry = (root / "packaging/resell-monitor.desktop").read_text()
+        build_script = (root / "scripts/build_appimage.sh").read_text()
+        self.assertTrue(app_run.stat().st_mode & stat.S_IXUSR)
+        self.assertIn('appdir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)', app_run.read_text())
+        self.assertIn('exec "$executable" "$@"', app_run.read_text())
+        self.assertIn("Icon=resell-monitor", desktop_entry)
+        self.assertIn("Exec=ResellMonitor", desktop_entry)
+        self.assertIn("from src.version import __version__", build_script)
+        self.assertIn("ResellMonitor-${version}-${architecture}.AppImage", build_script)
+        self.assertIn("APPIMAGETOOL", build_script)
+        self.assertNotIn("searches.json", app_run.read_text() + build_script)
+        self.assertNotIn("resell-monitor.db", app_run.read_text() + build_script)
+
+    def test_appimage_acceptance_copy_is_safe_across_directory_change(self) -> None:
+        readme = (Path(__file__).parents[1] / "README.md").read_text()
+        self.assertIn('artifact="$(pwd)/dist/ResellMonitor-0.1.0-x86_64.AppImage"', readme)
+        self.assertIn('cp "$artifact" /tmp/ResellMonitor-0.1.0-x86_64.AppImage', readme)
+        self.assertLess(readme.index('cp "$artifact"'), readme.index("cd /tmp"))
+        self.assertIn("VK_ERROR_INCOMPATIBLE_DRIVER", readme)
+        self.assertIn("WebEnginePage still not deleted", readme)
+        self.assertIn("pgrep -af 'ResellMonitor|QtWebEngineProcess'", readme)
+
+    def test_appdir_assembly_is_cwd_independent_and_contains_no_user_data(self) -> None:
+        source_root = Path(__file__).parents[1]
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = root / "dist/ResellMonitor"
+            bundle.mkdir(parents=True)
+            executable = bundle / "ResellMonitor"
+            executable.write_bytes(b"fixture")
+            packaging = root / "packaging"
+            packaging.mkdir()
+            (packaging / "AppRun").write_bytes((source_root / "packaging/AppRun").read_bytes())
+            (packaging / "resell-monitor.desktop").write_bytes(
+                (source_root / "packaging/resell-monitor.desktop").read_bytes()
+            )
+            branding = root / "assets/branding"
+            branding.mkdir(parents=True)
+            (branding / "resell-monitor-256.png").write_bytes(
+                (source_root / "assets/branding/resell-monitor-256.png").read_bytes()
+            )
+            appdir = root / "build/appimage/ResellMonitor.AppDir"
+            assemble_appdir(bundle, appdir, root)
+            self.assertTrue((appdir / "AppRun").stat().st_mode & stat.S_IXUSR)
+            self.assertTrue((appdir / "usr/lib/resell-monitor/ResellMonitor").is_file())
+            self.assertTrue((appdir / "usr/bin/ResellMonitor").is_symlink())
+            self.assertTrue((appdir / "resell-monitor.desktop").is_file())
+            self.assertTrue((appdir / "resell-monitor.png").is_file())
+            names = {path.name for path in appdir.rglob("*")}
+            self.assertNotIn("searches.json", names)
+            self.assertNotIn("resell-monitor.db", names)
 
     def test_version_is_canonical_and_desktop_entry_is_non_installing_template(self) -> None:
         root = Path(__file__).parents[1]
