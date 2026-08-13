@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+import ipaddress
 from typing import Mapping
+from urllib.parse import urlsplit
 
 
 class ListingStatus(StrEnum):
@@ -59,6 +61,48 @@ class Listing:
     description: str | None = None
     published_at: datetime | None = None
     availability: ListingAvailability = ListingAvailability.UNKNOWN
+    primary_image_url: str | None = None
+
+    def __post_init__(self) -> None:
+        self.primary_image_url = normalize_external_image_url(self.primary_image_url)
+
+
+def normalize_external_image_url(value: object) -> str | None:
+    """Return a browser-loadable public HTTP(S) image URL, or ``None``.
+
+    This validation is deliberately network-free. It rejects local/literal private
+    targets but does not resolve DNS, and no backend component fetches the URL.
+    """
+
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip()
+    if not candidate or len(candidate) > 4096 or any(
+        ord(character) < 32 for character in candidate
+    ):
+        return None
+    try:
+        parsed = urlsplit(candidate)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return None
+    if parsed.scheme.casefold() not in {"http", "https"} or not hostname:
+        return None
+    if parsed.username is not None or parsed.password is not None:
+        return None
+    normalized_host = hostname.rstrip(".").casefold()
+    if normalized_host == "localhost" or normalized_host.endswith(".localhost"):
+        return None
+    try:
+        address = ipaddress.ip_address(normalized_host)
+    except ValueError:
+        address = None
+    if address is not None and not address.is_global:
+        return None
+    if port is not None and port not in {80, 443}:
+        return None
+    return candidate
 
 
 @dataclass(slots=True, frozen=True)

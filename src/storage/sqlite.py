@@ -43,7 +43,7 @@ class SearchAccessState:
 
 
 class ListingRepository:
-    SCHEMA_VERSION = 9
+    SCHEMA_VERSION = 10
     ANALYTICS_BACKFILL_VERSION = 3
 
     def __init__(self, path: str | Path, *, freshness_policy: FreshnessPolicy | None = None,
@@ -94,6 +94,8 @@ class ListingRepository:
                 self._migrate_normalization_v8()
             if version < 9:
                 self._migrate_lifecycle_v9()
+            if version < 10:
+                self._migrate_listing_images_v10()
             self.connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
             self.connection.commit()
         except BaseException:
@@ -282,6 +284,9 @@ class ListingRepository:
             "ON listings(status,inbox_aged_out_at,first_seen)"
         )
 
+    def _migrate_listing_images_v10(self) -> None:
+        self._ensure_column("listings", "primary_image_url", "TEXT")
+
     def _migrate_wildberries_v5(self) -> None:
         self._ensure_column("retail_price_observations", "conditional_price", "INTEGER")
         for column, definition in (
@@ -379,14 +384,15 @@ class ListingRepository:
                        product_category, manufacturer, normalized_model, variant,
                        capacity, memory, comparable_key, match_confidence,
                        condition_class, warning_phrases, analytics_backfill_version,
-                       availability, availability_updated_at
-                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       availability, availability_updated_at, primary_image_url
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (listing.source, listing.external_id, listing.title, listing.price, listing.price_display, listing.location, listing.url, listing.description, timestamp, timestamp, ListingStatus.NEW.value,
                  product.product_category, product.manufacturer, product.normalized_model,
                  product.variant, product.capacity, product.memory, product.comparable_key,
                  product.match_confidence, condition.condition_class,
                  json.dumps(condition.matched_warning_phrases, ensure_ascii=False),
-                 self.ANALYTICS_BACKFILL_VERSION, listing.availability.value, timestamp),
+                 self.ANALYTICS_BACKFILL_VERSION, listing.availability.value, timestamp,
+                 listing.primary_image_url),
             )
             self.connection.execute("INSERT INTO price_history(source,external_id,price,observed_at) VALUES (?,?,?,?)", (listing.source, listing.external_id, listing.price, timestamp))
             self._update_quality_fields(listing, product, condition)
@@ -395,9 +401,9 @@ class ListingRepository:
         changed = previous != listing.price
         availability = (ListingAvailability.ARCHIVED if listing.availability is ListingAvailability.ARCHIVED
                         else ListingAvailability.ACTIVE)
-        self.connection.execute("""UPDATE listings SET title=?,current_price=?,price_display=?,location=?,url=?,description=?,last_seen=?,availability=?,availability_updated_at=?,
+        self.connection.execute("""UPDATE listings SET title=?,current_price=?,price_display=?,location=?,url=?,description=?,last_seen=?,availability=?,availability_updated_at=?,primary_image_url=COALESCE(?,primary_image_url),
             product_category=?,manufacturer=?,normalized_model=?,variant=?,capacity=?,memory=?,comparable_key=?,match_confidence=?,condition_class=?,warning_phrases=?,analytics_backfill_version=?
-            WHERE source=? AND external_id=?""", (listing.title, listing.price, listing.price_display, listing.location, listing.url, listing.description, timestamp, availability.value, timestamp,
+            WHERE source=? AND external_id=?""", (listing.title, listing.price, listing.price_display, listing.location, listing.url, listing.description, timestamp, availability.value, timestamp, listing.primary_image_url,
             product.product_category, product.manufacturer, product.normalized_model, product.variant,
             product.capacity, product.memory, product.comparable_key, product.match_confidence,
             condition.condition_class, json.dumps(condition.matched_warning_phrases, ensure_ascii=False),

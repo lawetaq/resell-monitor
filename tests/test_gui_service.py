@@ -177,6 +177,7 @@ class GuiServiceTests(unittest.TestCase):
             "25 000 ₽",
             "Хабаровск",
             "https://www.avito.ru/1",
+            primary_image_url="https://70.img.avito.st/image/preview",
         )
         search = SearchConfig("GPUs", "avito", "https://www.avito.ru/gpus")
         with ListingRepository(self.database) as repository:
@@ -207,6 +208,10 @@ class GuiServiceTests(unittest.TestCase):
         changed = self.service.set_listing_status("avito", "1", "interesting")
         self.assertEqual(changed["status"], "interesting")
         self.assertEqual(changed["previous_price"], 25_000)
+        self.assertEqual(
+            changed["primary_image_url"],
+            "https://70.img.avito.st/image/preview",
+        )
         self.assertEqual(len(changed["price_history"]), 2)
         self.assertEqual(self.service.listings({"price_drops": True})[0]["external_id"], "1")
         self.assertEqual(self.service.history()[0]["event_type"], "price_drop")

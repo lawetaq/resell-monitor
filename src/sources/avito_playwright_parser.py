@@ -2,17 +2,27 @@ from __future__ import annotations
 
 import re
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup, Tag
 
-from src.models import Listing
+from src.models import Listing, normalize_external_image_url
 
 AVITO_BASE_URL = "https://www.avito.ru"
 
 
 class PlaywrightExtractionError(RuntimeError):
     """Rendered Playwright data could not be converted to listings."""
+
+
+def normalize_avito_image_url(value: object) -> str | None:
+    """Accept only the image CDN host demonstrated by saved Avito responses."""
+
+    validated = normalize_external_image_url(value)
+    if validated is None:
+        return None
+    hostname = (urlsplit(validated).hostname or "").casefold().rstrip(".")
+    return validated if hostname == "img.avito.st" or hostname.endswith(".img.avito.st") else None
 
 
 def extract_network_items(payloads: list[Any]) -> list[dict[str, Any]] | None:
@@ -124,6 +134,11 @@ def _extract_dom_listing(card: Tag) -> Listing:
         else ""
     )
 
+    image = card.select_one('img[itemprop="image"][src]')
+    primary_image_url = normalize_avito_image_url(
+        image.get("src") if image is not None else None
+    )
+
     return Listing(
         source="avito",
         external_id=external_id,
@@ -132,4 +147,5 @@ def _extract_dom_listing(card: Tag) -> Listing:
         price_display=price_display or "Цена не указана",
         location=location or None,
         url=urljoin(AVITO_BASE_URL, href),
+        primary_image_url=primary_image_url,
     )

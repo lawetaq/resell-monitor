@@ -24,6 +24,7 @@ from src.sources.avito_playwright_parser import (
     PlaywrightExtractionError,
     extract_dom_listings,
     extract_network_items,
+    normalize_avito_image_url,
 )
 
 AVITO_BASE_URL = "https://www.avito.ru"
@@ -373,7 +374,22 @@ def normalize_listing(item: dict[str, Any]) -> Listing:
         location=location,
         url=urljoin(AVITO_BASE_URL, url_path),
         availability=_explicit_avito_availability(item),
+        primary_image_url=_extract_primary_image(item),
     )
+
+
+def _extract_primary_image(item: dict[str, Any]) -> str | None:
+    """Select the first search-card image at a deterministic preview size."""
+
+    images = item.get("images")
+    if not isinstance(images, list) or not images or not isinstance(images[0], dict):
+        return None
+    first = images[0]
+    for size in ("236x236", "208x208", "416x416", "472x472"):
+        validated = normalize_avito_image_url(first.get(size))
+        if validated is not None:
+            return validated
+    return None
 
 
 def _explicit_avito_availability(item: dict[str, Any]) -> ListingAvailability:
