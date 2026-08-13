@@ -97,6 +97,38 @@ and `--port`. See all options with:
 .venv/bin/python -m src.gui.app --help
 ```
 
+### Desktop shell (Linux first)
+
+Desktop mode reuses the same local server, frontend, configuration, and SQLite
+database inside a native pywebview window. Qt is the manually accepted and default
+dependency path for Desktop v1 on Linux. Install it with:
+
+```bash
+.venv/bin/python -m pip install -r requirements-desktop.txt
+```
+
+Launch it from the same working directory and use the same data-path options as
+browser mode:
+
+```bash
+.venv/bin/python -m src.desktop --gui qt
+.venv/bin/python -m src.desktop --debug
+```
+
+`requirements-desktop.txt` installs `pywebview[qt]` only on Linux. On future Windows
+or macOS installations it installs base pywebview instead of forcing Linux Qt
+packages. The launcher can also choose the installed backend automatically, so
+`python -m src.desktop` remains valid when the environment has one working backend.
+
+GTK remains an optional Linux alternative. Install the Python GTK bindings,
+WebKitGTK, and any pywebview GTK requirements appropriate to the distribution,
+then launch with `python -m src.desktop --gui gtk`. Package names vary by Linux
+distribution; the application does not download system GUI runtimes itself.
+
+Desktop mode binds only to `127.0.0.1` on an OS-selected ephemeral port and uses a
+random one-launch session. Browser development mode remains independent and does
+not require pywebview.
+
 ### Browser-assisted retail
 
 Browser-assisted capture is manual and opt-in. Install Playwright Firefox, run

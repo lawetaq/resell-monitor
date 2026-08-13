@@ -713,6 +713,13 @@ class GuiService:
 
     def close(self) -> None:
         self.stop_monitoring()
+        # Let an explicitly triggered worker leave its repository transaction before
+        # desktop/server resources disappear. The workers remain bounded by the
+        # existing transport timeouts; shutdown never starts new work.
+        if self._scan_lock.acquire(timeout=5):
+            self._scan_lock.release()
+        if self._retail_lock.acquire(timeout=5):
+            self._retail_lock.release()
         self._retail_browser.close()
 
     def _run_scans(self, searches: list[SearchConfig]) -> list[SourceScan]:

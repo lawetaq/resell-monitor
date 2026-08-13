@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+from http.cookies import SimpleCookie
 import json
 import mimetypes
+import secrets
 import threading
 import webbrowser
 from dataclasses import asdict, is_dataclass
@@ -30,23 +32,34 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def create_handler(service: GuiService) -> type[BaseHTTPRequestHandler]:
+DESKTOP_COOKIE = "rm_desktop_session"
+
+
+def create_handler(
+    service: GuiService, *, desktop_session_token: str | None = None
+) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         server_version = "ResellMonitor/0.1"
 
         def do_GET(self) -> None:
+            if not self._authorize(desktop_session_token, allow_bootstrap=True):
+                return
             try:
                 self._get()
             except Exception as error:
                 self._error(error)
 
         def do_POST(self) -> None:
+            if not self._authorize(desktop_session_token):
+                return
             try:
                 self._post()
             except Exception as error:
                 self._error(error)
 
         def do_PUT(self) -> None:
+            if not self._authorize(desktop_session_token):
+                return
             try:
                 name = self._path_after("/api/searches/")
                 self._json(HTTPStatus.OK, service.update_search(name, self._body()))
@@ -54,6 +67,8 @@ def create_handler(service: GuiService) -> type[BaseHTTPRequestHandler]:
                 self._error(error)
 
         def do_PATCH(self) -> None:
+            if not self._authorize(desktop_session_token):
+                return
             try:
                 parts = self._path_parts()
                 if len(parts) == 4 and parts[:2] == ["api", "listings"]:
@@ -68,6 +83,8 @@ def create_handler(service: GuiService) -> type[BaseHTTPRequestHandler]:
                 self._error(error)
 
         def do_DELETE(self) -> None:
+            if not self._authorize(desktop_session_token):
+                return
             try:
                 name = self._path_after("/api/searches/")
                 service.delete_search(name)
@@ -77,6 +94,34 @@ def create_handler(service: GuiService) -> type[BaseHTTPRequestHandler]:
 
         def log_message(self, format: str, *args: object) -> None:
             return
+
+        def _authorize(self, token: str | None, *, allow_bootstrap: bool = False) -> bool:
+            if token is None:
+                return True
+            path = urlsplit(self.path).path
+            if allow_bootstrap and path.rstrip("/") == f"/desktop/{token}":
+                self.send_response(HTTPStatus.SEE_OTHER)
+                self.send_header("Location", "/")
+                self.send_header(
+                    "Set-Cookie",
+                    f"{DESKTOP_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict",
+                )
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                return False
+            cookie = SimpleCookie()
+            try:
+                cookie.load(self.headers.get("Cookie", ""))
+                supplied = cookie.get(DESKTOP_COOKIE)
+                valid = supplied is not None and secrets.compare_digest(
+                    supplied.value, token
+                )
+            except (KeyError, TypeError):
+                valid = False
+            if valid:
+                return True
+            self._json(HTTPStatus.UNAUTHORIZED, {"error": "desktop session required"})
+            return False
 
         def _get(self) -> None:
             parsed = urlsplit(self.path)
@@ -297,27 +342,118 @@ def create_handler(service: GuiService) -> type[BaseHTTPRequestHandler]:
     return Handler
 
 
+class GuiServer:
+    """Reusable in-process GUI server with explicit resource ownership."""
+
+    def __init__(
+        self,
+        service: GuiService,
+        *,
+        host: str = "127.0.0.1",
+        port: int = 8765,
+        desktop_session_token: str | None = None,
+    ) -> None:
+        self.service = service
+        self.host = host
+        self._httpd = ThreadingHTTPServer(
+            (host, port),
+            create_handler(service, desktop_session_token=desktop_session_token),
+        )
+        self._thread: threading.Thread | None = None
+        self._closed = False
+
+    @property
+    def port(self) -> int:
+        return int(self._httpd.server_port)
+
+    @property
+    def url(self) -> str:
+        return f"http://{self.host}:{self.port}"
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        thread = threading.Thread(
+            target=self._httpd.serve_forever,
+            name="resell-monitor-gui-server",
+        )
+        thread.start()
+        self._thread = thread
+
+    def wait(self) -> None:
+        thread = self._thread
+        if thread is None:
+            raise RuntimeError("GUI server has not been started")
+        thread.join()
+
+    def stop(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            if self._thread is not None:
+                self._httpd.shutdown()
+                self._thread.join(timeout=5)
+        finally:
+            self._httpd.server_close()
+            self.service.close()
+
+    def __enter__(self) -> GuiServer:
+        self.start()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.stop()
+
+
+def create_server(
+    *,
+    config_path: Path,
+    database_path: Path,
+    output_dir: Path,
+    debug_dir: Path | None = None,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    desktop_session_token: str | None = None,
+) -> GuiServer:
+    service = GuiService(
+        config_path=config_path,
+        database_path=database_path,
+        output_dir=output_dir,
+        debug_dir=debug_dir,
+    )
+    try:
+        return GuiServer(
+            service,
+            host=host,
+            port=port,
+            desktop_session_token=desktop_session_token,
+        )
+    except BaseException:
+        service.close()
+        raise
+
+
 def run(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    service = GuiService(
+    server = create_server(
         config_path=args.config,
         database_path=args.database,
         output_dir=args.output_dir,
         debug_dir=args.debug_dir,
+        host=args.host,
+        port=args.port,
     )
-    server = ThreadingHTTPServer((args.host, args.port), create_handler(service))
-    url = f"http://{args.host}:{server.server_port}"
-    print(f"Resell Monitor GUI: {url}")
+    print(f"Resell Monitor GUI: {server.url}")
     if not args.no_browser:
-        threading.Timer(0.25, lambda: webbrowser.open(url)).start()
+        threading.Timer(0.25, lambda: webbrowser.open(server.url)).start()
     try:
-        server.serve_forever()
+        server.start()
+        server.wait()
     except KeyboardInterrupt:
         return 130
     finally:
-        server.shutdown()
-        server.server_close()
-        service.close()
+        server.stop()
     return 0
 
 
