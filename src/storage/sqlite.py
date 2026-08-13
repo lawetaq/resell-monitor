@@ -47,11 +47,20 @@ class ListingRepository:
     ANALYTICS_BACKFILL_VERSION = 3
 
     def __init__(self, path: str | Path, *, freshness_policy: FreshnessPolicy | None = None,
-                 historical_comparable_days: int = 30) -> None:
+                 historical_comparable_days: int = 30,
+                 backup_dir: str | Path | None = None) -> None:
         self.freshness_policy = freshness_policy or FreshnessPolicy()
         if historical_comparable_days < 1:
             raise ValueError("historical comparable window must be positive")
         self.historical_comparable_days = historical_comparable_days
+        self.path = Path(path) if str(path) != ":memory:" else None
+        self.backup_dir = (
+            Path(backup_dir) if backup_dir is not None
+            else (self.path.parent / "backups" if self.path is not None else None)
+        )
+        self._database_existed = bool(
+            self.path is not None and self.path.is_file() and self.path.stat().st_size > 0
+        )
         self.connection = sqlite3.connect(path, timeout=5.0)
         try:
             self.connection.row_factory = sqlite3.Row
@@ -74,6 +83,8 @@ class ListingRepository:
             )
         if version == self.SCHEMA_VERSION:
             return
+        if self._database_existed:
+            self._create_migration_backup(version)
         try:
             self.connection.execute("BEGIN IMMEDIATE")
             if version < 1:
@@ -101,6 +112,40 @@ class ListingRepository:
         except BaseException:
             self.connection.rollback()
             raise
+
+    def _create_migration_backup(self, schema_version: int) -> Path:
+        """Create and verify a SQLite-consistent backup before schema changes."""
+
+        if self.path is None or self.backup_dir is None:
+            raise RuntimeError("cannot back up a non-file database before migration")
+        self.backup_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        destination = self.backup_dir / (
+            f"{self.path.stem}-schema-v{schema_version}-{timestamp}{self.path.suffix or '.db'}"
+        )
+        backup_connection: sqlite3.Connection | None = None
+        try:
+            backup_connection = sqlite3.connect(destination)
+            self.connection.backup(backup_connection)
+            check = backup_connection.execute("PRAGMA quick_check").fetchone()
+            if check is None or check[0] != "ok":
+                raise RuntimeError("schema migration backup failed SQLite verification")
+            backup_version = int(
+                backup_connection.execute("PRAGMA user_version").fetchone()[0]
+            )
+            if backup_version != schema_version:
+                raise RuntimeError("schema migration backup has an unexpected version")
+        except BaseException:
+            if backup_connection is not None:
+                backup_connection.close()
+                backup_connection = None
+            if destination.exists():
+                destination.unlink()
+            raise
+        finally:
+            if backup_connection is not None:
+                backup_connection.close()
+        return destination
 
     def _create_schema(self) -> None:
         script = """

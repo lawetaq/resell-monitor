@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Resell Monitor
+Comment=Local marketplace monitoring and resale analytics
+Exec=ResellMonitor
+Terminal=false
+Categories=Utility;
+StartupNotify=true

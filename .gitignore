@@ -65,3 +65,6 @@ screenshot*.jpg
 .DS_Store
 Thumbs.db
 Desktop.ini
+# Packaging output
+/build/
+/dist/

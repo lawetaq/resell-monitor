@@ -129,6 +129,33 @@ Desktop mode binds only to `127.0.0.1` on an OS-selected ephemeral port and uses
 random one-launch session. Browser development mode remains independent and does
 not require pywebview.
 
+### Standalone Linux build (ONEDIR)
+
+Packaging uses PyInstaller to produce a directory containing the executable,
+Python runtime, pywebview, and the accepted Qt backend. Build dependencies are
+separate from browser and ordinary desktop runtime requirements:
+
+```bash
+.venv/bin/python -m pip install -r requirements-build.txt
+PYTHON=.venv/bin/python scripts/build_linux.sh
+```
+
+The artifact is `dist/ResellMonitor/ResellMonitor`. It can be launched from any
+working directory and does not require the end user to install Python or pip.
+The build is intentionally ONEDIR for initial Linux acceptance; AppImage,
+one-file packaging, installers, and signing are deferred.
+
+The bundle contains read-only GUI files and the location registry. It never
+contains a user database or mutable `searches.json`. The Qt build excludes the
+pywebview GTK backend. Native Linux Qt/WebEngine shared-library compatibility
+still depends on the distribution and must be validated on each supported
+release before the artifact is described as portable.
+
+The repository includes `packaging/resell-monitor.desktop` as a non-installing
+desktop-entry template. Its `Exec` value must be adjusted or installed together
+with the final bundle by a later installer; builds and tests do not modify the
+user's application menu.
+
 ### Browser-assisted retail
 
 Browser-assisted capture is manual and opt-in. Install Playwright Firefox, run
@@ -197,6 +224,70 @@ Default runtime paths, relative to the working directory, are:
 
 These paths are ignored by Git. Do not publish databases, browser profiles,
 debug responses, generated reports, or configuration backups.
+
+### Packaged user data and upgrades
+
+Source/browser development mode keeps the project-local defaults above. Explicit
+`--config`, `--database`, and `--output-dir` arguments keep their existing
+meaning. A frozen desktop build instead uses `platformdirs`, so typical Linux
+locations are:
+
+- Database and settings: `~/.local/share/resell-monitor/resell-monitor.db`
+- Exports: `~/.local/share/resell-monitor/exports/`
+- Schema backups: `~/.local/share/resell-monitor/backups/`
+- Saved searches: `~/.config/resell-monitor/searches.json`
+- Cache: `~/.cache/resell-monitor/`
+- Logs/diagnostics root: `~/.local/state/resell-monitor/log/`
+
+These locations respect the platform's XDG variables, so the exact expanded
+paths can differ. Windows and macOS paths are selected by `platformdirs` rather
+than hardcoded by the application.
+
+On first packaged startup, directories and an empty saved-search configuration
+are created automatically. If the executable is in the repository's exact
+`dist/ResellMonitor/` build layout and the persistent destination is empty, the
+known project-local `data/resell-monitor.db` and `searches.json` are copied with
+their originals left untouched. For another trusted legacy project location,
+launch once with `--legacy-root /absolute/path/to/resell-monitor`. Existing
+persistent files always win; databases are never merged or overwritten.
+
+Before upgrading an existing database schema, Resell Monitor creates and verifies
+a SQLite-consistent backup in the persistent `backups/` directory. No backup is
+made when the schema is already current. A backup or migration failure stops
+startup instead of substituting an empty database. An older application also
+refuses to open a database whose schema is newer than it supports.
+
+This separation is the update contract: replace the application bundle while
+leaving the platformdirs data/config directories in place. The new build opens
+the same searches, settings, listing history, lifecycle state, and analytics,
+then backs up and migrates the schema only when required. Deleting the ONEDIR
+bundle does not delete user data.
+
+#### Packaged-build acceptance
+
+After installing `requirements-build.txt` and running the build script:
+
+1. From outside the repository, run
+   `/absolute/path/to/resell-monitor/dist/ResellMonitor/ResellMonitor`.
+2. Confirm the native window opens without a Python command and no scan starts.
+3. Check Overview, Searches, Listings, stored thumbnails, Settings, RU/EN,
+   themes, sorting, and external links. External listings should open in the
+   system browser while the application remains open.
+4. Close and relaunch; confirm searches, settings, history, and lifecycle state
+   remain.
+5. Build or copy a second application bundle, leave the user directories above
+   untouched, and launch the second executable to simulate an update.
+6. Confirm the same data remains and that removing only `dist/ResellMonitor/`
+   does not remove the platformdirs directories.
+
+For an existing checkout outside the recognized `dist/ResellMonitor/` layout,
+use `--legacy-root /absolute/path/to/resell-monitor` on the first launch only.
+Inspect artifact and data sizes independently with, for example:
+
+```bash
+du -sh /absolute/path/to/resell-monitor/dist/ResellMonitor
+du -sh ~/.local/share/resell-monitor ~/.config/resell-monitor
+```
 
 Automatic exports use collision-safe local-time names such as
 `listings_gpu_2026-08-10_180512.txt`. TXT, JSON, and HTML include normalized

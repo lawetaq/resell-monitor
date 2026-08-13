@@ -16,8 +16,10 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from src.gui.service import GuiService
+from src.resources import resource_path
+from src.version import __version__
 
-STATIC_DIR = Path(__file__).with_name("static")
+STATIC_DIR = resource_path("src/gui/static")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,7 +41,7 @@ def create_handler(
     service: GuiService, *, desktop_session_token: str | None = None
 ) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
-        server_version = "ResellMonitor/0.1"
+        server_version = f"ResellMonitor/{__version__}"
 
         def do_GET(self) -> None:
             if not self._authorize(desktop_session_token, allow_bootstrap=True):
@@ -292,6 +294,8 @@ def create_handler(
             except FileNotFoundError:
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
+            if candidate.name == "index.html":
+                content = content.replace(b"__APP_VERSION__", __version__.encode("ascii"))
             self.send_response(HTTPStatus.OK)
             self.send_header(
                 "Content-Type",

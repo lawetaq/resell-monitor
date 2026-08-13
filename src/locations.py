@@ -8,10 +8,11 @@ from pathlib import Path
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from src.models import LocationMode, LocationProfile, SearchConfig
+from src.resources import resource_path
 
 
 def _load_registry() -> dict[str, LocationProfile]:
-    rows = json.loads(Path(__file__).with_name("location_registry.json").read_text(encoding="utf-8"))
+    rows = json.loads(resource_path("src/location_registry.json").read_text(encoding="utf-8"))
     return {str(row["id"]): LocationProfile(
         id=str(row["id"]), display_name=str(row["display_name"]), country="RU",
         source_tokens=row.get("source_tokens") or {}, aliases=tuple(row.get("aliases") or ()),

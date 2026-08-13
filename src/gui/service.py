@@ -25,6 +25,7 @@ from src.retail_monitor import RetailMonitor
 from src.retail_providers import DnsRetailProvider, OzonRetailProvider, WildberriesRetailProvider
 from src.retail_browser import RetailBrowserService, status_payload
 from src.retail_browser_adapters import ADAPTERS
+from src.version import __version__
 
 ScanRunner = Callable[[list[SearchConfig], Callable[[str], None]], list[SourceScan]]
 LOGGER = logging.getLogger(__name__)
@@ -778,7 +779,7 @@ class GuiService:
             events = repository.monitoring_events(limit=5)
         runtime = self.runtime()
         safe_errors = [str(item.get("event_type", "event")) for item in events]
-        lines = ["Resell Monitor 0.1", f"Platform: {platform.system()} {platform.release()}",
+        lines = [f"Resell Monitor {__version__}", f"Platform: {platform.system()} {platform.release()}",
                  f"Database schema: {schema}", f"Database: {self.database_path}",
                  f"Exports: {self.output_dir}", f"Runtime: {runtime['state']}",
                  f"Last scan: {runtime['last_scan_at'] or 'never'}",

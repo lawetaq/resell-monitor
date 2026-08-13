@@ -1,3 +1,4 @@
 -r requirements.txt
+platformdirs>=4,<5
 pywebview[qt]>=5,<7; sys_platform == "linux"
 pywebview>=5,<7; sys_platform != "linux"
