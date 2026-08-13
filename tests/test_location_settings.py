@@ -123,7 +123,7 @@ class LocationArchitectureTests(unittest.TestCase):
             self.assertEqual(service.settings()["default_search_editor"], "advanced")
             service.scan_now()
             self.assertIn("/vladivostok/", calls[-1])
-            self.assertIn("Database schema: 8", service.diagnostic_report())
+            self.assertIn("Database schema: 9", service.diagnostic_report())
             simple_payload = {"name":"x", "source":"avito", "url":"", "preset_id":"ram",
                               "location_mode":"all", "interval_seconds":900}
             created = service.create_search(simple_payload)
@@ -149,4 +149,4 @@ class LocationArchitectureTests(unittest.TestCase):
         self.assertIn('list="location-options"', html)
         script = (Path(__file__).parents[1] / "src/gui/static/app.js").read_text()
         self.assertIn("api('/api/locations')", script)
-        self.assertIn("Default — ${loc?.display_name", script)
+        self.assertIn("t('search.default')", script)

@@ -157,6 +157,7 @@ class GuiService:
                 max_price=_integer_or_none(values.get("max_price")),
                 text=_string_or_none(values.get("text")),
                 availability=_string_or_none(values.get("availability")),
+                inbox_only=_truthy(values.get("inbox_only")),
                 location=_string_or_none(values.get("location")),
                 sort_by=_string_or_none(values.get("sort_by")),
                 sort_direction=_string_or_none(values.get("sort_direction")),
@@ -176,6 +177,48 @@ class GuiService:
         with ListingRepository(self.database_path) as repository:
             repository.set_status(source, external_id, normalized)
             return repository.listing_detail(source, external_id)
+
+    def bulk_listing_action(self, keys: list[tuple[str, str]], action: str) -> dict[str, int]:
+        if not keys:
+            return {"changed": 0}
+        with ListingRepository(self.database_path) as repository:
+            if action == "reviewed":
+                for source, external_id in keys:
+                    repository.set_status(source, external_id, ListingStatus.REVIEWED)
+                return {"changed": len(keys)}
+            if action == "unreviewed":
+                for source, external_id in keys:
+                    repository.set_status(source, external_id, ListingStatus.NEW)
+                return {"changed": len(keys)}
+            if action == "dismiss":
+                return {"changed": repository.dismiss_from_inbox(keys)}
+            if action == "archive":
+                return {"changed": repository.archive_listings(keys)}
+        raise ValueError(f"unsupported bulk listing action: {action}")
+
+    def cleanup_preview(self) -> dict[str, object]:
+        settings = self.settings()
+        retention = int(settings["archive_retention_days"])
+        with ListingRepository(self.database_path) as repository:
+            preview = repository.cleanup_preview(
+                inbox_days=int(settings["unreviewed_inbox_days"]),
+                archive_days=int(settings["archive_disappeared_days"]),
+                retention_days=retention or None,
+            )
+        return {key: value for key, value in preview.items() if not key.startswith("_")}
+
+    def apply_cleanup(self, *, remove_from_inbox: bool,
+                      archive_disappeared: bool) -> dict[str, object]:
+        settings = self.settings()
+        retention = int(settings["archive_retention_days"])
+        with ListingRepository(self.database_path) as repository:
+            return repository.apply_cleanup(
+                remove_from_inbox=remove_from_inbox,
+                archive_disappeared=archive_disappeared,
+                inbox_days=int(settings["unreviewed_inbox_days"]),
+                archive_days=int(settings["archive_disappeared_days"]),
+                retention_days=retention or None,
+            )
 
     def history(self, *, limit: int = 100) -> list[dict[str, object]]:
         with ListingRepository(self.database_path) as repository:
@@ -444,6 +487,13 @@ class GuiService:
             "default_max_block_retries": 1,
             "default_export_format": "json",
             "default_search_editor": "simple",
+            "interface_language": "en",
+            "appearance_mode": "system",
+            "color_theme": "graphite",
+            "unreviewed_inbox_days": 5,
+            "disappearance_success_scans": 2,
+            "archive_disappeared_days": 14,
+            "archive_retention_days": 180,
             "default_location": profile_setting_value(DEFAULT_LOCATION),
             "custom_locations": "[]",
             "ui_refresh_seconds": 2,
@@ -460,7 +510,7 @@ class GuiService:
             if key in stored:
                 defaults[key] = (
                     stored[key]
-                    if key in {"default_export_format", "default_search_editor", "default_location", "custom_locations"}
+                    if key in {"default_export_format", "default_search_editor", "interface_language", "appearance_mode", "color_theme", "default_location", "custom_locations"}
                     else stored[key] if key == "retail_region" else int(stored[key])
                 )
         return defaults
@@ -477,6 +527,8 @@ class GuiService:
             "ui_refresh_seconds",
             "market_lookback_days",
             "retail_refresh_interval_hours", "retail_dns_enabled",
+            "unreviewed_inbox_days", "disappearance_success_scans",
+            "archive_disappeared_days", "archive_retention_days",
             "retail_ozon_enabled", "retail_wildberries_enabled",
         )
         for key in numeric:
@@ -497,6 +549,14 @@ class GuiService:
             raise ValueError("market lookback must be between 7 and 365 days")
         if not 1 <= values["retail_refresh_interval_hours"] <= 720:
             raise ValueError("retail refresh interval must be between 1 and 720 hours")
+        if not 1 <= values["unreviewed_inbox_days"] <= 365:
+            raise ValueError("unreviewed inbox lifetime must be between 1 and 365 days")
+        if not 1 <= values["disappearance_success_scans"] <= 10:
+            raise ValueError("disappearance threshold must be between 1 and 10 scans")
+        if not 1 <= values["archive_disappeared_days"] <= 365:
+            raise ValueError("archive delay must be between 1 and 365 days")
+        if values["archive_retention_days"] not in {0, 30, 90, 180}:
+            raise ValueError("archive retention must be never, 30, 90, or 180 days")
         values["retail_region"] = str(values.get("retail_region") or "").strip()
         for key in ("retail_dns_enabled", "retail_ozon_enabled", "retail_wildberries_enabled"):
             if values[key] not in {0, 1}:
@@ -505,6 +565,12 @@ class GuiService:
             raise ValueError("default export format must be json, txt, or html")
         if values["default_search_editor"] not in {"simple", "advanced"}:
             raise ValueError("default search editor must be simple or advanced")
+        if values["interface_language"] not in {"en", "ru"}:
+            raise ValueError("interface language must be en or ru")
+        if values["appearance_mode"] not in {"system", "light", "dark"}:
+            raise ValueError("appearance mode must be system, light, or dark")
+        if values["color_theme"] not in {"graphite", "moss", "ember", "plum"}:
+            raise ValueError("color theme must be graphite, moss, ember, or plum")
         profile_from_json(str(values["default_location"]))
         custom_rows = json.loads(str(values["custom_locations"]))
         if not isinstance(custom_rows, list):
@@ -736,7 +802,10 @@ class GuiService:
         scans: list[SourceScan] = []
         try:
             with ListingRepository(self.database_path) as repository:
-                monitor = Monitor(sources, repository, debug_dir=self.debug_dir)
+                monitor = Monitor(
+                    sources, repository, debug_dir=self.debug_dir,
+                    authoritative_searches=self._load_searches(),
+                )
                 for search in searches:
                     progress(f"Scanning {search.source.title()}…")
                     scans.extend(monitor.scan([search]))

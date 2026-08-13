@@ -152,11 +152,20 @@ class GuiServiceTests(unittest.TestCase):
         self.assertEqual(updated["default_interval_seconds"], 1200)
         self.assertEqual(updated["default_export_format"], "html")
         self.assertEqual(self.service.settings()["ui_refresh_seconds"], 4)
+        self.assertEqual(self.service.update_settings({"interface_language": "ru"})["interface_language"], "ru")
+        themed = self.service.update_settings({"appearance_mode": "dark", "color_theme": "moss"})
+        self.assertEqual((themed["appearance_mode"], themed["color_theme"]), ("dark", "moss"))
 
         with self.assertRaisesRegex(ValueError, "default interval"):
             self.service.update_settings({"default_interval_seconds": 30})
         with self.assertRaisesRegex(ValueError, "default export format"):
             self.service.update_settings({"default_export_format": "csv"})
+        with self.assertRaisesRegex(ValueError, "interface language"):
+            self.service.update_settings({"interface_language": "de"})
+        with self.assertRaisesRegex(ValueError, "appearance mode"):
+            self.service.update_settings({"appearance_mode": "automatic"})
+        with self.assertRaisesRegex(ValueError, "color theme"):
+            self.service.update_settings({"color_theme": "neon"})
 
     def test_listing_status_detail_history_export_and_copy(self) -> None:
         now = datetime(2026, 8, 8, tzinfo=timezone.utc)

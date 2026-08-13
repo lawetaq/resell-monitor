@@ -44,6 +44,7 @@ class Monitor:
         cooldown_seconds: float = 2,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        authoritative_searches: list[SearchConfig] | None = None,
     ) -> None:
         if retries < 0 or cooldown_seconds < 0:
             raise ValueError("retries and cooldown_seconds must be non-negative")
@@ -54,9 +55,11 @@ class Monitor:
         self.cooldown_seconds = cooldown_seconds
         self.sleep = sleep
         self.clock = clock
+        self.authoritative_searches = authoritative_searches
 
     def scan(self, searches: list[SearchConfig]) -> list[SourceScan]:
         scans: list[SourceScan] = []
+        relevant = self.authoritative_searches if self.authoritative_searches is not None else searches
         for config in searches:
             if not config.enabled:
                 continue
@@ -186,6 +189,11 @@ class Monitor:
                     accepted,
                     outcomes,
                     [0.0] * len(accepted),
+                    trustworthy=result.health is HealthState.HEALTHY,
+                    authoritative_search_names={
+                        item.name for item in relevant
+                        if item.enabled and item.source == config.source
+                    },
                 )
                 dynamic_scores = self.repository.update_dynamic_scores(config, accepted)
             except Exception:

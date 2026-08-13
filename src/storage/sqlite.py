@@ -43,7 +43,7 @@ class SearchAccessState:
 
 
 class ListingRepository:
-    SCHEMA_VERSION = 8
+    SCHEMA_VERSION = 9
     ANALYTICS_BACKFILL_VERSION = 3
 
     def __init__(self, path: str | Path, *, freshness_policy: FreshnessPolicy | None = None,
@@ -92,6 +92,8 @@ class ListingRepository:
                 self._migrate_quality_v7()
             if version < 8:
                 self._migrate_normalization_v8()
+            if version < 9:
+                self._migrate_lifecycle_v9()
             self.connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
             self.connection.commit()
         except BaseException:
@@ -265,6 +267,21 @@ class ListingRepository:
                 (availability.value, now.isoformat(), row["source"], row["external_id"]),
             )
 
+    def _migrate_lifecycle_v9(self) -> None:
+        self._ensure_column("listings", "inbox_aged_out_at", "TEXT")
+        self._ensure_column("listings", "archived_at", "TEXT")
+        self._ensure_column(
+            "listing_searches", "missing_success_count", "INTEGER NOT NULL DEFAULT 0"
+        )
+        self.connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_listings_lifecycle "
+            "ON listings(availability,status,last_seen)"
+        )
+        self.connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_listings_inbox "
+            "ON listings(status,inbox_aged_out_at,first_seen)"
+        )
+
     def _migrate_wildberries_v5(self) -> None:
         self._ensure_column("retail_price_observations", "conditional_price", "INTEGER")
         for column, definition in (
@@ -436,6 +453,92 @@ class ListingRepository:
         if cursor.rowcount != 1:
             raise KeyError((source, external_id))
         self.connection.commit()
+
+    def archive_listings(self, keys: list[tuple[str, str]], *,
+                         observed_at: datetime | None = None) -> int:
+        timestamp = (observed_at or datetime.now(timezone.utc)).isoformat()
+        changed = 0
+        with self.connection:
+            for source, external_id in keys:
+                cursor = self.connection.execute(
+                    """UPDATE listings SET availability='archived',archived_at=?,
+                       inbox_aged_out_at=COALESCE(inbox_aged_out_at,?),
+                       availability_updated_at=? WHERE source=? AND external_id=?
+                       AND availability!='archived'""",
+                    (timestamp, timestamp, timestamp, source, external_id),
+                )
+                changed += cursor.rowcount
+        return changed
+
+    def dismiss_from_inbox(self, keys: list[tuple[str, str]], *,
+                           observed_at: datetime | None = None) -> int:
+        timestamp = (observed_at or datetime.now(timezone.utc)).isoformat()
+        changed = 0
+        with self.connection:
+            for source, external_id in keys:
+                cursor = self.connection.execute(
+                    """UPDATE listings SET inbox_aged_out_at=?
+                       WHERE source=? AND external_id=? AND inbox_aged_out_at IS NULL""",
+                    (timestamp, source, external_id),
+                )
+                changed += cursor.rowcount
+        return changed
+
+    def cleanup_preview(self, *, now: datetime | None = None,
+                        inbox_days: int = 5, archive_days: int = 14,
+                        retention_days: int | None = 180) -> dict[str, object]:
+        current = _aware(now or datetime.now(timezone.utc))
+        rows = self.listing_rows()
+        aged_keys = [
+            (str(row["source"]), str(row["external_id"])) for row in rows
+            if row.get("status") == ListingStatus.NEW.value
+            and row.get("availability") == ListingAvailability.ACTIVE.value
+            and not row.get("inbox_aged_out_at")
+            and row.get("priority") not in {"1", "2"}
+            and (_parse_timestamp(str(row.get("first_seen") or "")) is not None)
+            and current - _aware(_parse_timestamp(str(row["first_seen"])) or current)
+            > timedelta(days=inbox_days)
+        ]
+        archive_cutoff = (current - timedelta(days=archive_days)).isoformat()
+        archive_keys = [
+            (str(row["source"]), str(row["external_id"]))
+            for row in self.connection.execute(
+                """SELECT source,external_id FROM listings
+                   WHERE availability='disappeared' AND availability_updated_at<=?""",
+                (archive_cutoff,),
+            )
+        ]
+        retention_eligible = 0
+        if retention_days is not None:
+            retention_cutoff = (current - timedelta(days=retention_days)).isoformat()
+            retention_eligible = int(self.connection.execute(
+                """SELECT COUNT(*) FROM listings WHERE availability='archived'
+                   AND archived_at IS NOT NULL AND archived_at<=?""",
+                (retention_cutoff,),
+            ).fetchone()[0])
+        return {
+            "aged_out_count": len(aged_keys),
+            "archive_count": len(archive_keys),
+            "delete_count": 0,
+            "retention_eligible_count": retention_eligible,
+            "deletion_supported": False,
+            "_aged_keys": aged_keys,
+            "_archive_keys": archive_keys,
+        }
+
+    def apply_cleanup(self, *, remove_from_inbox: bool = True,
+                      archive_disappeared: bool = True,
+                      now: datetime | None = None, inbox_days: int = 5,
+                      archive_days: int = 14,
+                      retention_days: int | None = 180) -> dict[str, object]:
+        current = _aware(now or datetime.now(timezone.utc))
+        preview = self.cleanup_preview(now=current, inbox_days=inbox_days,
+                                       archive_days=archive_days,
+                                       retention_days=retention_days)
+        aged = self.dismiss_from_inbox(preview["_aged_keys"], observed_at=current) if remove_from_inbox else 0  # type: ignore[arg-type]
+        archived = self.archive_listings(preview["_archive_keys"], observed_at=current) if archive_disappeared else 0  # type: ignore[arg-type]
+        return {"aged_out_count": aged, "archive_count": archived,
+                "delete_count": 0, "deletion_supported": False}
 
     def all(self) -> list[sqlite3.Row]:
         return list(self.connection.execute("SELECT * FROM listings ORDER BY first_seen DESC"))
@@ -621,13 +724,16 @@ class ListingRepository:
         scores: list[float],
         *,
         observed_at: datetime | None = None,
+        trustworthy: bool = True,
+        authoritative_search_names: set[str] | None = None,
     ) -> None:
         timestamp = (observed_at or datetime.now(timezone.utc)).isoformat()
         with self.connection:
-            self.connection.execute(
-                "INSERT OR IGNORE INTO search_scan_runs(search_name,source,observed_at) VALUES (?,?,?)",
-                (search.name, search.source, timestamp),
-            )
+            if trustworthy:
+                self.connection.execute(
+                    "INSERT OR IGNORE INTO search_scan_runs(search_name,source,observed_at) VALUES (?,?,?)",
+                    (search.name, search.source, timestamp),
+                )
             for listing, outcome, score in zip(
                 listings, outcomes, scores, strict=True
             ):
@@ -639,7 +745,8 @@ class ListingRepository:
                        ON CONFLICT(source, external_id, search_name) DO UPDATE SET
                          ranking_score=excluded.ranking_score,
                          last_matched_at=excluded.last_matched_at,
-                         target_price=excluded.target_price""",
+                         target_price=excluded.target_price,
+                         missing_success_count=0""",
                     (
                         listing.source,
                         listing.external_id,
@@ -692,41 +799,63 @@ class ListingRepository:
                        WHERE source=? AND external_id=?""",
                     (availability.value, timestamp, listing.source, listing.external_id),
                 )
-            self._mark_scan_disappearances(search, timestamp)
+            if trustworthy:
+                self._record_trustworthy_absences(
+                    search, timestamp,
+                    authoritative_search_names=authoritative_search_names,
+                )
+                archive_days = max(1, int(self.app_settings().get("archive_disappeared_days", "14")))
+                cutoff = (_aware(_parse_timestamp(timestamp) or datetime.now(timezone.utc))
+                          - timedelta(days=archive_days)).isoformat()
+                self.connection.execute(
+                    """UPDATE listings SET availability='archived',archived_at=?,
+                       inbox_aged_out_at=COALESCE(inbox_aged_out_at,?),
+                       availability_updated_at=? WHERE availability='disappeared'
+                       AND availability_updated_at<=?""",
+                    (timestamp, timestamp, timestamp, cutoff),
+                )
             keys = {normalize_product(item.title, item.description).comparable_key for item in listings}
             lookback = int(self.app_settings().get("market_lookback_days", "30"))
             for key in keys - {None}:
                 self._create_market_snapshot(str(key), timestamp, lookback)
 
-    def _mark_scan_disappearances(self, search: SearchConfig, timestamp: str) -> None:
-        candidates = self.connection.execute(
-            """SELECT l.source,l.external_id,l.availability
-               FROM listings l JOIN listing_searches ls USING(source,external_id)
-               WHERE ls.source=? AND ls.search_name=? AND ls.last_matched_at<?
-                 AND l.availability!='archived'""",
+    def _record_trustworthy_absences(
+        self, search: SearchConfig, timestamp: str, *,
+        authoritative_search_names: set[str] | None = None,
+    ) -> None:
+        threshold = max(1, int(self.app_settings().get("disappearance_success_scans", "2")))
+        self.connection.execute(
+            """UPDATE listing_searches SET missing_success_count=missing_success_count+1
+               WHERE source=? AND search_name=? AND last_matched_at<?""",
             (search.source, search.name, timestamp),
         )
+        candidates = self.connection.execute(
+            """SELECT l.source,l.external_id
+               FROM listings l JOIN listing_searches ls USING(source,external_id)
+               WHERE ls.source=? AND ls.search_name=? AND l.availability!='archived'
+               GROUP BY l.source,l.external_id""",
+            (search.source, search.name),
+        )
         for row in candidates:
-            # A listing remains active if any other associated search still has no
-            # completed scan after its last match.
-            still_observed = False
-            for association in self.connection.execute(
-                """SELECT search_name,last_matched_at FROM listing_searches
-                   WHERE source=? AND external_id=?""",
-                (row["source"], row["external_id"]),
-            ):
-                later = self.connection.execute(
-                    """SELECT 1 FROM search_scan_runs WHERE source=? AND search_name=?
-                       AND observed_at>? LIMIT 1""",
-                    (row["source"], association["search_name"], association["last_matched_at"]),
-                ).fetchone()
-                if later is None:
-                    still_observed = True
-                    break
-            if not still_observed:
+            if authoritative_search_names is None:
+                counts = [int(item[0]) for item in self.connection.execute(
+                    """SELECT missing_success_count FROM listing_searches
+                       WHERE source=? AND external_id=?""",
+                    (row["source"], row["external_id"]),
+                )]
+            else:
+                names = sorted(authoritative_search_names)
+                placeholders = ",".join("?" for _ in names)
+                counts = [] if not names else [int(item[0]) for item in self.connection.execute(
+                    f"""SELECT missing_success_count FROM listing_searches
+                        WHERE source=? AND external_id=?
+                        AND search_name IN ({placeholders})""",
+                    (row["source"], row["external_id"], *names),
+                )]
+            if counts and all(count >= threshold for count in counts):
                 self.connection.execute(
                     """UPDATE listings SET availability='disappeared',availability_updated_at=?
-                       WHERE source=? AND external_id=?""",
+                       WHERE source=? AND external_id=? AND availability!='disappeared'""",
                     (timestamp, row["source"], row["external_id"]),
                 )
 
@@ -1273,6 +1402,7 @@ class ListingRepository:
         max_price: int | None = None,
         text: str | None = None,
         availability: str | None = None,
+        inbox_only: bool = False,
         location: str | None = None,
         sort_by: str | None = None,
         sort_direction: str | None = None,
@@ -1306,9 +1436,9 @@ class ListingRepository:
         if availability:
             if availability == "unavailable":
                 clauses.append("l.availability IN ('archived','disappeared')")
-            elif availability == "unknown":
+            elif availability in {"disappeared", "archived"}:
                 clauses.append("l.availability=?")
-            parameters.append(availability)
+                parameters.append(availability)
         if location:
             clauses.append("LOWER(COALESCE(l.location, '')) = LOWER(?)")
             parameters.append(location)
@@ -1353,6 +1483,8 @@ class ListingRepository:
             ))
             item["ranking_score"] = item["score"]
             self._apply_availability(item)
+        if inbox_only:
+            result = [row for row in result if row.get("in_working_inbox")]
         if availability in {"active", "stale", "unknown"}:
             result = [row for row in result if row.get("availability") == availability]
         if sort_by is not None:
@@ -1385,6 +1517,22 @@ class ListingRepository:
         item["is_current"] = current
         item["is_actionable"] = actionable
         item["freshness_seconds"] = _age_seconds(item.get("last_seen"))
+        inbox_days = max(1, int(self.app_settings().get("unreviewed_inbox_days", "5")))
+        first_seen = _parse_timestamp(str(item.get("first_seen") or ""))
+        protected = effective is ListingAvailability.ACTIVE and item.get("priority") in {"1", "2"}
+        ordinary_current = (
+            effective is ListingAvailability.ACTIVE
+            and first_seen is not None
+            and datetime.now(timezone.utc) - _aware(first_seen) <= timedelta(days=inbox_days)
+        )
+        item["inbox_aged_out"] = bool(item.get("inbox_aged_out_at")) or not (
+            protected or ordinary_current
+        )
+        item["in_working_inbox"] = (
+            item.get("status") == ListingStatus.NEW.value
+            and not item.get("inbox_aged_out_at")
+            and (protected or ordinary_current)
+        )
         if not current:
             item["non_actionable_reason"] = unavailable_recommendation(effective)
             item["recommendation"] = item["non_actionable_reason"]
@@ -1444,18 +1592,15 @@ class ListingRepository:
         ]
 
     def dashboard_counts(self) -> dict[str, int]:
-        row = self.connection.execute(
-            """SELECT
-                 SUM(CASE WHEN status='new' THEN 1 ELSE 0 END) AS new_count,
-                 SUM(CASE WHEN status='interesting' THEN 1 ELSE 0 END) AS interesting_count
-               FROM listings"""
-        ).fetchone()
+        rows = self.listing_rows()
         drops = self.connection.execute(
             "SELECT COUNT(*) FROM monitoring_events WHERE event_type='price_drop'"
         ).fetchone()[0]
         return {
-            "new": int(row["new_count"] or 0),
-            "interesting": int(row["interesting_count"] or 0),
+            "new": sum(bool(row.get("in_working_inbox")) for row in rows),
+            "active": sum(row.get("availability") == "active" for row in rows),
+            "interesting": sum(bool(row.get("is_actionable")) for row in rows),
+            "archived": sum(row.get("availability") == "archived" for row in rows),
             "price_drops": int(drops),
         }
 

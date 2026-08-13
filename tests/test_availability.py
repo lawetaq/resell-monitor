@@ -53,6 +53,7 @@ class AvailabilityTests(unittest.TestCase):
             active = [self.listing(str(index), 20_000 + index * 1_000) for index in range(3)]
             self.observe(repository, [archived, disappeared, *active], self.now)
             self.observe(repository, active, self.now + timedelta(minutes=1))
+            self.observe(repository, active, self.now + timedelta(minutes=2))
             rows = {row["external_id"]: row for row in repository.listing_rows()}
             self.assertEqual(rows["archived"]["availability"], "archived")
             self.assertEqual(rows["gone"]["availability"], "disappeared")
@@ -90,6 +91,8 @@ class AvailabilityTests(unittest.TestCase):
         with ListingRepository(self.database) as repository:
             repository.upsert(self.listing("legacy", 100), observed_at=self.now - timedelta(days=365))
         connection = sqlite3.connect(self.database)
+        connection.execute("DROP INDEX idx_listings_lifecycle")
+        connection.execute("DROP INDEX idx_listings_inbox")
         connection.execute("ALTER TABLE listings DROP COLUMN availability")
         connection.execute("ALTER TABLE listings DROP COLUMN availability_updated_at")
         connection.execute("PRAGMA user_version=3")

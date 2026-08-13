@@ -103,6 +103,8 @@ def create_handler(service: GuiService) -> type[BaseHTTPRequestHandler]:
                 self._json(HTTPStatus.OK, service.runtime())
             elif parsed.path == "/api/settings":
                 self._json(HTTPStatus.OK, service.settings())
+            elif parsed.path == "/api/cleanup/preview":
+                self._json(HTTPStatus.OK, service.cleanup_preview())
             elif parsed.path == "/api/locations":
                 self._json(HTTPStatus.OK, service.locations(query.get("q", "")))
             elif parsed.path == "/api/diagnostics":
@@ -176,6 +178,17 @@ def create_handler(service: GuiService) -> type[BaseHTTPRequestHandler]:
                 )
             elif path == "/api/settings":
                 self._json(HTTPStatus.OK, service.update_settings(self._body()))
+            elif path == "/api/cleanup/apply":
+                payload = self._body()
+                self._json(HTTPStatus.OK, service.apply_cleanup(
+                    remove_from_inbox=bool(payload.get("remove_from_inbox")),
+                    archive_disappeared=bool(payload.get("archive_disappeared")),
+                ))
+            elif path == "/api/listings/bulk":
+                payload = self._body()
+                keys = [(str(item[0]), str(item[1])) for item in payload.get("selected", [])]
+                self._json(HTTPStatus.OK, service.bulk_listing_action(
+                    keys, str(payload.get("action") or "")))
             elif path == "/api/location/inspect":
                 payload = self._body()
                 self._json(HTTPStatus.OK, service.inspect_marketplace_url(

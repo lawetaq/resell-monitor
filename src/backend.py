@@ -46,7 +46,10 @@ def run(argv: list[str] | None = None) -> int:
         print(f"Invalid source configuration: {error}")
         repository.close()
         return 2
-    monitor = Monitor(sources, repository, debug_dir=args.debug_dir)
+    monitor = Monitor(
+        sources, repository, debug_dir=args.debug_dir,
+        authoritative_searches=searches,
+    )
     scheduler = SearchScheduler()
     try:
         while True:
