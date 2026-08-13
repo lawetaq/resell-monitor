@@ -87,7 +87,7 @@ class SQLiteMigrationRegressionTests(unittest.TestCase):
             row = connection.execute(
                 "SELECT comparable_key,match_confidence,analytics_backfill_version FROM listings"
             ).fetchone()
-        self.assertEqual(row, (None, "insufficient", 1))
+        self.assertEqual(row, (None, "insufficient", ListingRepository.ANALYTICS_BACKFILL_VERSION))
         TrackingConnection.instances.clear()
         with patch("src.storage.sqlite.sqlite3.connect", side_effect=tracking_connect):
             with ListingRepository(self.database):

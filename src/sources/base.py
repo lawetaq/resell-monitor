@@ -35,6 +35,10 @@ class SearchResult:
     session_mode: str | None = None
     response_cookie_names: tuple[str, ...] = ()
     block_classification: str = "none"
+    raw_items: int | None = None
+    valid_listings: int | None = None
+    rejected_items: int = 0
+    priced_listings: int | None = None
 
 
 class MarketplaceSource(Protocol):

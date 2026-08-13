@@ -69,6 +69,14 @@ class GuiServiceTests(unittest.TestCase):
         self.assertEqual(self.runner.calls, [])
         self.assertEqual(self.service.runtime()["state"], "Idle")
 
+    def test_export_generation_makes_no_marketplace_call_and_does_not_overwrite(self) -> None:
+        first = self.service.export("json")
+        second = self.service.export("json")
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.exists())
+        self.assertTrue(second.exists())
+        self.assertEqual(self.runner.calls, [])
+
     def test_search_create_edit_enable_disable_delete_and_secret_redaction(self) -> None:
         public = self.service.searches()[0]
         self.assertTrue(public["proxy_configured"])

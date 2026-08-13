@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable, Mapping
 
 from src.filtering import matches
+from src.analytics.quality import partition_candidates
 from src.models import Listing, SearchConfig
 from src.sources.base import HealthState, MarketplaceSource, SearchResult
 from src.storage.sqlite import ListingRepository, SearchAccessState, UpsertOutcome
@@ -144,7 +145,16 @@ class Monitor:
                     )
                 )
                 continue
-            accepted = [item for item in result.listings if matches(item, config)]
+            valid, quality = partition_candidates(result.listings)
+            result.raw_items = quality.raw_items
+            result.valid_listings = quality.valid_listings
+            result.rejected_items = quality.rejected_items
+            result.priced_listings = quality.priced_listings
+            if quality.raw_items and (quality.valid_listings == 0 or quality.rejection_rate >= 50):
+                result.health = HealthState.DEGRADED
+                result.error = (result.error or
+                                f"candidate quality rejected {quality.rejected_items}/{quality.raw_items} items")
+            accepted = [item for item in valid if matches(item, config)]
             access_state = self.repository.record_search_success(
                 config,
                 status=result.status_code,
@@ -152,6 +162,9 @@ class Monitor:
                 observed_at=self.clock(),
                 health=result.health.value,
                 result_count=len(accepted),
+                raw_items=quality.raw_items, valid_listings=quality.valid_listings,
+                rejected_items=quality.rejected_items, priced_listings=quality.priced_listings,
+                error=result.error,
             )
             try:
                 outcomes = self.repository.upsert_many(accepted)

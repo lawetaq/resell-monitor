@@ -4,13 +4,13 @@ import sqlite3
 import json
 import hashlib
 from statistics import median
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from src.analytics import (FreshnessPolicy, aggregate_market, assess_condition,
                            assess_resale, normalize_product,
-                           unavailable_recommendation)
+                           unavailable_recommendation, validate_candidate)
 from src.models import Listing, ListingAvailability, ListingStatus, SearchConfig
 from src.retail import RetailPriceObservation
 
@@ -36,14 +36,22 @@ class SearchAccessState:
     health: str = "experimental"
     last_error: str | None = None
     last_result_count: int = 0
+    raw_items: int = 0
+    valid_listings: int = 0
+    rejected_items: int = 0
+    priced_listings: int = 0
 
 
 class ListingRepository:
-    SCHEMA_VERSION = 6
-    ANALYTICS_BACKFILL_VERSION = 1
+    SCHEMA_VERSION = 8
+    ANALYTICS_BACKFILL_VERSION = 3
 
-    def __init__(self, path: str | Path, *, freshness_policy: FreshnessPolicy | None = None) -> None:
+    def __init__(self, path: str | Path, *, freshness_policy: FreshnessPolicy | None = None,
+                 historical_comparable_days: int = 30) -> None:
         self.freshness_policy = freshness_policy or FreshnessPolicy()
+        if historical_comparable_days < 1:
+            raise ValueError("historical comparable window must be positive")
+        self.historical_comparable_days = historical_comparable_days
         self.connection = sqlite3.connect(path, timeout=5.0)
         try:
             self.connection.row_factory = sqlite3.Row
@@ -80,6 +88,10 @@ class ListingRepository:
                 self._migrate_wildberries_v5()
             if version < 6:
                 self._migrate_retail_browser_v6()
+            if version < 7:
+                self._migrate_quality_v7()
+            if version < 8:
+                self._migrate_normalization_v8()
             self.connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
             self.connection.commit()
         except BaseException:
@@ -186,15 +198,7 @@ class ListingRepository:
         self.connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_observations_time ON listing_observations(observed_at)"
         )
-        keys = self._backfill_listing_analytics()
-        now = datetime.now(timezone.utc).isoformat()
-        for comparable_key in keys:
-            existing = self.connection.execute(
-                "SELECT 1 FROM market_snapshots WHERE comparable_key=? LIMIT 1",
-                (comparable_key,),
-            ).fetchone()
-            if existing is None:
-                self._create_market_snapshot(comparable_key, now)
+        self._backfill_listing_analytics()
 
     def _migrate_retail_v3(self) -> None:
         for column, definition in (
@@ -285,6 +289,50 @@ class ListingRepository:
             PRIMARY KEY(retailer,retrieval_method)
         )""")
 
+    def _migrate_quality_v7(self) -> None:
+        for column, definition in (
+            ("item_condition", "TEXT NOT NULL DEFAULT 'unknown'"),
+            ("ram_type", "TEXT"), ("ram_module_type", "TEXT"), ("ecc", "INTEGER"),
+            ("frequency_mhz", "INTEGER"), ("gpu_model", "TEXT"), ("vram_gb", "INTEGER"),
+            ("cpu_model", "TEXT"), ("socket", "TEXT"), ("chipset", "TEXT"),
+            ("ssd_capacity", "TEXT"), ("ssd_interface", "TEXT"),
+            ("module_count", "INTEGER"), ("module_capacity_gb", "INTEGER"),
+            ("total_capacity_gb", "INTEGER"),
+            ("multi_item", "INTEGER NOT NULL DEFAULT 0"),
+            ("price_ambiguous", "INTEGER NOT NULL DEFAULT 0"),
+            ("needs_review", "INTEGER NOT NULL DEFAULT 0"),
+            ("duplicate_group_id", "TEXT"),
+            ("duplicate_probability", "REAL NOT NULL DEFAULT 0"),
+            ("candidate_valid", "INTEGER NOT NULL DEFAULT 1"),
+        ):
+            self._ensure_column("listings", column, definition)
+        for column, definition in (
+            ("raw_items", "INTEGER NOT NULL DEFAULT 0"),
+            ("valid_listings", "INTEGER NOT NULL DEFAULT 0"),
+            ("rejected_items", "INTEGER NOT NULL DEFAULT 0"),
+            ("priced_listings", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            self._ensure_column("search_access_state", column, definition)
+        self.connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_listings_duplicate_group ON listings(duplicate_group_id)"
+        )
+        self.connection.execute("UPDATE listings SET analytics_backfill_version=1")
+        keys = self._backfill_listing_analytics()
+        now = datetime.now(timezone.utc).isoformat()
+        for comparable_key in keys:
+            if self.connection.execute(
+                    "SELECT 1 FROM market_snapshots WHERE comparable_key=? LIMIT 1",
+                    (comparable_key,)).fetchone() is None:
+                self._create_market_snapshot(comparable_key, now)
+
+    def _migrate_normalization_v8(self) -> None:
+        for column, definition in (
+            ("module_count", "INTEGER"), ("module_capacity_gb", "INTEGER"),
+            ("total_capacity_gb", "INTEGER"),
+        ):
+            self._ensure_column("listings", column, definition)
+        self._backfill_listing_analytics()
+
     def upsert(self, listing: Listing, *, observed_at: datetime | None = None) -> UpsertOutcome:
         timestamp = (observed_at or datetime.now(timezone.utc)).isoformat()
         with self.connection:
@@ -324,6 +372,7 @@ class ListingRepository:
                  self.ANALYTICS_BACKFILL_VERSION, listing.availability.value, timestamp),
             )
             self.connection.execute("INSERT INTO price_history(source,external_id,price,observed_at) VALUES (?,?,?,?)", (listing.source, listing.external_id, listing.price, timestamp))
+            self._update_quality_fields(listing, product, condition)
             return UpsertOutcome(True, False)
         previous = row["current_price"]
         changed = previous != listing.price
@@ -339,7 +388,48 @@ class ListingRepository:
             listing.source, listing.external_id))
         if changed:
             self.connection.execute("INSERT INTO price_history(source,external_id,price,observed_at) VALUES (?,?,?,?)", (listing.source, listing.external_id, listing.price, timestamp))
+        self._update_quality_fields(listing, product, condition)
         return UpsertOutcome(False, changed, previous)
+
+    def _update_quality_fields(self, listing: Listing, product: object,
+                               condition: object) -> None:
+        normalized_title = " ".join(listing.title.casefold().split())
+        group_material = "\x1f".join((listing.source, normalized_title,
+                                      str(getattr(product, "normalized_model", "") or ""),
+                                      str(listing.price or ""),
+                                      (listing.location or "").casefold()))
+        group_id = hashlib.sha256(group_material.encode()).hexdigest()[:16]
+        multi = bool(getattr(product, "multi_item", False))
+        ambiguous = bool(getattr(product, "price_ambiguous", False))
+        item_condition = str(getattr(condition, "item_condition", "unknown"))
+        needs_review = multi or ambiguous or item_condition in {"faulty", "parts_only"}
+        candidate_valid = not (listing.source == "youla" and not validate_candidate(listing).valid)
+        self.connection.execute(
+            """UPDATE listings SET item_condition=?,ram_type=?,ram_module_type=?,ecc=?,
+               frequency_mhz=?,gpu_model=?,vram_gb=?,cpu_model=?,socket=?,chipset=?,
+               ssd_capacity=?,ssd_interface=?,module_count=?,module_capacity_gb=?,
+               total_capacity_gb=?,multi_item=?,price_ambiguous=?,needs_review=?,
+               duplicate_group_id=?,duplicate_probability=?,candidate_valid=?
+               WHERE source=? AND external_id=?""",
+            (item_condition, getattr(product, "ram_type", None),
+             getattr(product, "ram_module_type", None), getattr(product, "ecc", None),
+             getattr(product, "frequency_mhz", None), getattr(product, "gpu_model", None),
+             getattr(product, "vram_gb", None), getattr(product, "cpu_model", None),
+             getattr(product, "socket", None), getattr(product, "chipset", None),
+             getattr(product, "ssd_capacity", None), getattr(product, "ssd_interface", None),
+             getattr(product, "module_count", None), getattr(product, "module_capacity_gb", None),
+             getattr(product, "total_capacity_gb", None),
+             int(multi), int(ambiguous), int(needs_review), group_id, 0.0, int(candidate_valid),
+             listing.source, listing.external_id),
+        )
+        duplicates = self.connection.execute(
+            "SELECT COUNT(*) FROM listings WHERE duplicate_group_id=?", (group_id,)
+        ).fetchone()[0]
+        if duplicates > 1:
+            self.connection.execute(
+                "UPDATE listings SET duplicate_probability=.95 WHERE duplicate_group_id=?",
+                (group_id,),
+            )
 
     def set_status(self, source: str, external_id: str, status: ListingStatus) -> None:
         cursor = self.connection.execute("UPDATE listings SET status=? WHERE source=? AND external_id=?", (status.value, source, external_id))
@@ -374,6 +464,8 @@ class ListingRepository:
             health=row["health"],
             last_error=row["last_error"],
             last_result_count=row["last_result_count"],
+            raw_items=row["raw_items"], valid_listings=row["valid_listings"],
+            rejected_items=row["rejected_items"], priced_listings=row["priced_listings"],
         )
 
     def record_search_success(
@@ -385,21 +477,27 @@ class ListingRepository:
         observed_at: datetime,
         health: str = "healthy",
         result_count: int = 0,
+        raw_items: int = 0, valid_listings: int = 0,
+        rejected_items: int = 0, priced_listings: int = 0,
+        error: str | None = None,
     ) -> SearchAccessState:
         self._ensure_search_state(search)
         with self.connection:
             self.connection.execute(
                 """UPDATE search_access_state
                    SET last_success_at=?, consecutive_blocks=0, blocked_until=NULL,
-                       last_http_status=?, last_transport=?, health=?, last_error=NULL,
-                       last_result_count=?
+                       last_http_status=?, last_transport=?, health=?, last_error=?,
+                       last_result_count=?,raw_items=?,valid_listings=?,
+                       rejected_items=?,priced_listings=?
                    WHERE source=? AND search_name=? AND search_url=?""",
                 (
                     observed_at.isoformat(),
                     status,
                     transport,
                     health,
+                    error,
                     result_count,
+                    raw_items, valid_listings, rejected_items, priced_listings,
                     search.source,
                     search.name,
                     search.url,
@@ -647,9 +745,12 @@ class ListingRepository:
         assert at is not None
         cutoff = (at - timedelta(days=lookback_days)).isoformat()
         raw_rows = list(self.connection.execute(
-            """SELECT lo.source,lo.external_id,lo.search_name,lo.price,lo.observed_at latest
+            """SELECT lo.source,lo.external_id,lo.search_name,lo.price,lo.observed_at latest,
+                      l.duplicate_group_id
                FROM listing_observations lo JOIN listings l USING(source,external_id)
                WHERE l.comparable_key=? AND lo.observed_at BETWEEN ? AND ? AND lo.price IS NOT NULL
+                 AND l.candidate_valid=1 AND l.condition_class!='FAULT'
+                 AND l.multi_item=0 AND l.price_ambiguous=0
                ORDER BY lo.observed_at""",
             (comparable_key, cutoff, timestamp),
         ))
@@ -658,7 +759,8 @@ class ListingRepository:
             identity = (str(row["source"]), str(row["external_id"]))
             item = collapsed.setdefault(identity, {
                 "source": row["source"], "external_id": row["external_id"],
-                "price": row["price"], "latest": row["latest"], "search_names": set(),
+                "price": row["price"], "latest": row["latest"],
+                "duplicate_group_id": row["duplicate_group_id"], "search_names": set(),
             })
             item["search_names"].add(str(row["search_name"]))  # type: ignore[union-attr]
             if str(row["latest"]) >= str(item["latest"]):
@@ -667,10 +769,18 @@ class ListingRepository:
         if not rows:
             # Legacy/local test data may predate observation tracking.
             rows = [dict(row) for row in self.connection.execute(
-                """SELECT source,external_id,'' search_name,current_price price,last_seen latest
+                """SELECT source,external_id,'' search_name,current_price price,last_seen latest,
+                          duplicate_group_id
                    FROM listings WHERE comparable_key=? AND current_price IS NOT NULL
+                   AND candidate_valid=1 AND condition_class!='FAULT'
+                   AND multi_item=0 AND price_ambiguous=0
                    AND last_seen BETWEEN ? AND ?""", (comparable_key, cutoff, timestamp)
             )]
+        deduplicated: dict[str, dict[str, object]] = {}
+        for row in rows:
+            group = str(row.get("duplicate_group_id") or f"{row['source']}:{row['external_id']}")
+            deduplicated.setdefault(group, row)
+        rows = list(deduplicated.values())
         prices = [int(row["price"]) for row in rows]
         recent_cutoff = (at - timedelta(days=7)).isoformat()
         recent_prices = [int(row["price"]) for row in rows if row["latest"] >= recent_cutoff]
@@ -733,13 +843,13 @@ class ListingRepository:
     def market_search(
         self, query: str = "", *, product_category: str | None = None
     ) -> list[dict[str, object]]:
-        if product_category not in {None, "gpu", "cpu", "ram", "ssd"}:
+        if product_category not in {None, "gpu", "cpu", "ram", "ssd", "motherboard"}:
             raise ValueError("unsupported product category")
         pattern = f"%{query.casefold()}%"
         rows = self.connection.execute(
             """SELECT comparable_key,product_category,normalized_model,variant,
                       COUNT(*) listing_count,MAX(last_seen) last_updated
-               FROM listings WHERE comparable_key IS NOT NULL
+               FROM listings WHERE comparable_key IS NOT NULL AND candidate_valid=1
                  AND (? IS NULL OR product_category=?)
                  AND (?='' OR LOWER(normalized_model || ' ' || COALESCE(variant,'') || ' ' || comparable_key) LIKE ?)
                GROUP BY comparable_key ORDER BY last_updated DESC""",
@@ -757,7 +867,7 @@ class ListingRepository:
         current = snapshots[-1]
         rows = [row for row in self.listing_rows() if row.get("comparable_key") == comparable_key]
         current_rows = [row for row in rows if row.get("current_price") is not None
-                        and bool(row.get("is_actionable"))]
+                        and bool(row.get("is_available"))]
         current_rows.sort(key=lambda row: int(row["current_price"]))
         trend_7 = _snapshot_trend(snapshots, 7)
         trend_30 = _snapshot_trend(snapshots, 30)
@@ -788,9 +898,21 @@ class ListingRepository:
         ).fetchone()
         retail = self.retail_summary(str(row.get("comparable_key"))) if row.get("comparable_key") else None
         retail_price = int(retail["representative_price"]) if retail and retail.get("representative_price") else None
+        candidate_market, broadened = self._candidate_market(row)
+        market = candidate_market or {
+            "median": None, "q1": None, "q3": None, "minimum": None, "sample_count": 0,
+        }
+        source_degraded = self.connection.execute(
+            """SELECT 1 FROM listing_searches ls JOIN search_access_state ss
+               ON ss.source=ls.source AND ss.search_name=ls.search_name
+               WHERE ls.source=? AND ls.external_id=? AND ss.health='degraded' LIMIT 1""",
+            (row["source"], row["external_id"]),
+        ).fetchone() is not None
         result = assess_resale(
-            asking_price=row.get("current_price"), median=float(snapshot["median"]),
-            q1=float(snapshot["q1"]), sample_count=int(snapshot["sample_count"]),
+            asking_price=row.get("current_price"),
+            median=float(market["median"]) if market.get("median") is not None else None,
+            q1=float(market["q1"]) if market.get("q1") is not None else None,
+            sample_count=int(market["sample_count"]),
             first_seen=_parse_timestamp(str(row["first_seen"])), trend_7d=trend_7,
             trend_30d=trend_30,
             activity_count=(int(snapshot["new_listings_count"])
@@ -800,6 +922,15 @@ class ListingRepository:
             target_price=target_row["target_price"] if target_row else None,
             retail_price=retail_price,
             retail_confidence=str(retail.get("confidence", "insufficient")) if retail else "insufficient",
+            match_confidence=str(row.get("match_confidence") or "insufficient"),
+            multi_item=bool(row.get("multi_item")), price_ambiguous=bool(row.get("price_ambiguous")),
+            ram_compatibility_unknown=(row.get("product_category") == "ram" and
+                                       (row.get("ram_module_type") == "unknown" or row.get("ecc") is None)),
+            source_degraded=source_degraded, geography_broadened=False,
+            item_condition=str(row.get("item_condition") or "unknown"),
+            liquidity_fallback=_liquidity_fallback(row),
+            comparable_fallback=str(market.get("comparable_tier") or "exact") != "exact",
+            historical_fallback_used=bool(market.get("historical_fallback_used")),
         )
         return {
             "score": result.score, "recommendation": result.recommendation,
@@ -807,12 +938,83 @@ class ListingRepository:
             "estimated_resale_price": result.estimated_resale_price,
             "expected_gross_margin": result.expected_gross_margin,
             "confidence": result.confidence, "market_trend": result.market_trend,
-            "market_median": snapshot["median"], "market_q1": snapshot["q1"],
-            "market_q3": snapshot["q3"], "market_sample_count": snapshot["sample_count"],
+            "market_median": market["median"], "median_competitor_price": market["median"],
+            "market_q1": market["q1"], "market_q3": market["q3"],
+            "low_market_price": market.get("minimum"), "market_sample_count": market["sample_count"],
+            "sample_size": market["sample_count"], "geography_broadened": broadened,
+            "active_sample_size": market.get("active_sample_size", market["sample_count"]),
+            "historical_sample_size": market.get("historical_sample_size", 0),
+            "comparable_tier": market.get("comparable_tier", "exact"),
+            "historical_fallback_used": bool(market.get("historical_fallback_used")),
             "retail_reference_price": retail_price,
             "listing_discount_vs_retail": result.listing_discount_vs_retail,
             "used_new_gap_percent": result.used_new_gap_percent,
+            "overall_score": result.overall_score, "deal_score": result.deal_score,
+            "confidence_score": result.confidence_score,
+            "liquidity_score": result.liquidity_score, "risk_score": result.risk_score,
+            "priority": result.priority, "verdict": result.verdict,
+            "raw_score_band": result.raw_score_band,
+            "needs_review": result.needs_review or bool(row.get("needs_review")),
+            "requires_review": result.requires_review or bool(row.get("needs_review")),
+            "score_reasons": list(result.score_reasons), "risk_reasons": list(result.risk_reasons),
+            "review_reasons": list(result.review_reasons),
+            "target_buy_price": result.target_buy_price, "max_buy_price": result.max_buy_price,
+            "expected_gross_profit": result.expected_gross_margin,
         }
+
+    def _candidate_market(self, candidate: dict[str, object]) -> tuple[dict[str, object] | None, bool]:
+        all_rows = [dict(row) for row in self.connection.execute(
+            """SELECT source,external_id,current_price,location,duplicate_group_id,
+                      comparable_key,product_category,normalized_model,vram_gb,
+                      availability,last_seen
+               FROM listings WHERE current_price IS NOT NULL
+                 AND NOT (source=? AND external_id=?) AND candidate_valid=1
+                 AND condition_class!='FAULT' AND multi_item=0 AND price_ambiguous=0""",
+            (candidate.get("source"), candidate.get("external_id")),
+        )]
+        rows = [item for item in all_rows
+                if item.get("comparable_key") == candidate.get("comparable_key")]
+        tier = "exact"
+        active_exact = [item for item in rows if item.get("availability") == "active"]
+        if candidate.get("product_category") == "gpu" and len(active_exact) < 3:
+            model_rows = [item for item in all_rows
+                          if item.get("product_category") == "gpu"
+                          and item.get("normalized_model") == candidate.get("normalized_model")]
+            known_variants = {int(item["vram_gb"]) for item in model_rows
+                              if item.get("vram_gb") is not None}
+            candidate_vram = candidate.get("vram_gb")
+            compatible = (len(known_variants) <= 1 if candidate_vram is None else
+                          all(value == int(candidate_vram) for value in known_variants))
+            if compatible:
+                rows = model_rows
+                tier = "model_vram_relaxed"
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(days=self.historical_comparable_days)
+        rows = [item for item in rows if item.get("availability") == "active" or
+                (_parse_timestamp(str(item.get("last_seen") or "")) is not None and
+                 _aware(_parse_timestamp(str(item["last_seen"])) or now) >= cutoff)]
+        unique: dict[str, dict[str, object]] = {}
+        for item in rows:
+            unique.setdefault(str(item.get("duplicate_group_id") or
+                                  f"{item['source']}:{item['external_id']}"), item)
+        rows = list(unique.values())
+        chosen, broadened = rows, False
+        active = [item for item in chosen if item.get("availability") == "active"]
+        historical = [item for item in chosen if item.get("availability") != "active"]
+        historical_used = len(active) == 2 and bool(historical)
+        market_rows = active if len(active) >= 3 else active + historical if historical_used else []
+        if len(market_rows) < 3:
+            return None, broadened
+        snapshot = aggregate_market(str(candidate.get("comparable_key")),
+                                    [int(item["current_price"]) for item in market_rows],
+                                    datetime.now(timezone.utc))
+        result = asdict(snapshot) if snapshot else None
+        if result is not None:
+            result.update({"active_sample_size": len(active),
+                           "historical_sample_size": len(historical),
+                           "historical_fallback_used": historical_used,
+                           "comparable_tier": tier})
+        return result, broadened
 
     def top_opportunities(self, *, limit: int = 10) -> list[dict[str, object]]:
         opportunities: list[dict[str, object]] = []
@@ -820,7 +1022,8 @@ class ListingRepository:
             summary = self.market_summary(str(product["comparable_key"]))
             if summary and summary["strongest_candidate"]:
                 candidate = dict(summary["strongest_candidate"])
-                if candidate.get("score") is not None:
+                if candidate.get("score") is not None and candidate.get("priority") != "reject" \
+                        and not candidate.get("needs_review"):
                     opportunities.append(candidate)
         return sorted(opportunities, key=lambda row: int(row["score"]), reverse=True)[:limit]
 
@@ -1070,8 +1273,11 @@ class ListingRepository:
         max_price: int | None = None,
         text: str | None = None,
         availability: str | None = None,
+        location: str | None = None,
+        sort_by: str | None = None,
+        sort_direction: str | None = None,
     ) -> list[dict[str, object]]:
-        clauses: list[str] = []
+        clauses: list[str] = ["l.candidate_valid=1"]
         parameters: list[object] = []
         if source:
             clauses.append("l.source=?")
@@ -1102,7 +1308,10 @@ class ListingRepository:
                 clauses.append("l.availability IN ('archived','disappeared')")
             elif availability == "unknown":
                 clauses.append("l.availability=?")
-                parameters.append(availability)
+            parameters.append(availability)
+        if location:
+            clauses.append("LOWER(COALESCE(l.location, '')) = LOWER(?)")
+            parameters.append(location)
         if price_drops:
             clauses.append(
                 "EXISTS (SELECT 1 FROM monitoring_events me WHERE "
@@ -1129,12 +1338,12 @@ class ListingRepository:
             item["matched_warning_phrases"] = json.loads(str(warnings))
             key = item.get("comparable_key")
             if not key:
-                item.update(_insufficient_assessment())
+                item.update(_insufficient_assessment(item))
                 self._apply_availability(item)
                 continue
             snapshots = self.market_snapshots(str(key), days=None)
             if not snapshots:
-                item.update(_insufficient_assessment())
+                item.update(_insufficient_assessment(item))
                 self._apply_availability(item)
                 continue
             snapshot = snapshots[-1]
@@ -1145,7 +1354,16 @@ class ListingRepository:
             item["ranking_score"] = item["score"]
             self._apply_availability(item)
         if availability in {"active", "stale", "unknown"}:
-            return [row for row in result if row.get("availability") == availability]
+            result = [row for row in result if row.get("availability") == availability]
+        if sort_by is not None:
+            fields = {"price": "current_price", "date": "first_seen", "rating": "overall_score"}
+            if sort_by not in fields or sort_direction not in {"asc", "desc"}:
+                raise ValueError("unsupported listing sort")
+            field = fields[sort_by]
+            present = [row for row in result if row.get(field) is not None]
+            missing = [row for row in result if row.get(field) is None]
+            present.sort(key=lambda row: row[field], reverse=sort_direction == "desc")
+            result = present + missing
         return result
 
     def _apply_availability(self, item: dict[str, object]) -> None:
@@ -1157,13 +1375,23 @@ class ListingRepository:
             stored,
             last_seen=_parse_timestamp(str(item["last_seen"])) if item.get("last_seen") else None,
         )
-        actionable = self.freshness_policy.is_actionable(effective)
+        available = effective is ListingAvailability.ACTIVE
+        current = self.freshness_policy.is_actionable(effective)
+        actionable = (current and item.get("priority") in {"1", "2", "3"}
+                      and item.get("verdict") not in {"PASS", "REJECT", "NEEDS REVIEW"}
+                      and item.get("condition_class") != "FAULT")
         item["availability"] = effective.value
+        item["is_available"] = available
+        item["is_current"] = current
         item["is_actionable"] = actionable
         item["freshness_seconds"] = _age_seconds(item.get("last_seen"))
-        if not actionable:
+        if not current:
             item["non_actionable_reason"] = unavailable_recommendation(effective)
             item["recommendation"] = item["non_actionable_reason"]
+            item["verdict"] = item["non_actionable_reason"]
+            item["actionable_score"] = None
+        elif not actionable:
+            item["non_actionable_reason"] = str(item.get("verdict") or "NOT ACTIONABLE")
             item["actionable_score"] = None
         else:
             item["non_actionable_reason"] = None
@@ -1209,6 +1437,8 @@ class ListingRepository:
                 row["health"],
                 row["last_error"],
                 row["last_result_count"],
+                row["raw_items"], row["valid_listings"],
+                row["rejected_items"], row["priced_listings"],
             )
             for row in rows
         ]
@@ -1263,7 +1493,7 @@ class ListingRepository:
 
     def _backfill_listing_analytics(self) -> set[str]:
         rows = self.connection.execute(
-            """SELECT source,external_id,title,description FROM listings
+            """SELECT * FROM listings
                WHERE analytics_backfill_version<?""",
             (self.ANALYTICS_BACKFILL_VERSION,),
         ).fetchall()
@@ -1283,6 +1513,14 @@ class ListingRepository:
                  self.ANALYTICS_BACKFILL_VERSION,
                  row["source"], row["external_id"]),
             )
+            columns = {column["name"] for column in self.connection.execute("PRAGMA table_info(listings)")}
+            if "item_condition" in columns:
+                listing = Listing(
+                    str(row["source"]), str(row["external_id"]), str(row["title"]),
+                    row["current_price"], str(row["price_display"]), row["location"],
+                    str(row["url"]), row["description"],
+                )
+                self._update_quality_fields(listing, product, condition)
             if product.comparable_key:
                 keys.add(product.comparable_key)
         return keys
@@ -1337,12 +1575,48 @@ def _market_confidence(count: int) -> str:
     return "high" if count >= 10 else "medium" if count >= 5 else "low" if count >= 3 else "insufficient"
 
 
-def _insufficient_assessment() -> dict[str, object]:
-    return {"score": None, "recommendation": "INSUFFICIENT DATA",
+def _liquidity_fallback(row: dict[str, object]) -> int:
+    model = str(row.get("normalized_model") or "").casefold()
+    category = row.get("product_category")
+    if row.get("ram_module_type") in {"RDIMM", "LRDIMM"}:
+        return 25
+    if category == "ram" and row.get("capacity") in {"8GB", "16GB"}:
+        return 70
+    if category == "ssd" and row.get("capacity") in {"500GB", "512GB", "1TB"}:
+        return 68
+    if any(segment in model for segment in ("ryzen 5", "i3 ", "i5 ", "i7 ",
+                                             "rtx 3060", "rtx 3060 ti", "rtx 3070", "rx 6600")):
+        return 75
+    if category in {"gpu", "cpu", "ram", "ssd", "motherboard"}:
+        return 50
+    return 35
+
+
+def _insufficient_assessment(row: dict[str, object] | None = None) -> dict[str, object]:
+    row = row or {}
+    assessment = assess_resale(
+        asking_price=row.get("current_price"), median=None, q1=None, sample_count=0,
+        first_seen=None, condition_class=str(row.get("condition_class") or "OK"),
+        multi_item=bool(row.get("multi_item")),
+        price_ambiguous=bool(row.get("price_ambiguous")),
+        item_condition=str(row.get("item_condition") or "unknown"),
+    )
+    return {"score": None, "recommendation": assessment.recommendation,
             "market_discount_percent": None, "estimated_resale_price": None,
             "expected_gross_margin": None, "confidence": "insufficient",
             "market_trend": "STABLE", "market_median": None,
-            "market_q1": None, "market_q3": None, "market_sample_count": 0}
+            "market_q1": None, "market_q3": None, "market_sample_count": 0,
+            "median_competitor_price": None, "low_market_price": None, "sample_size": 0,
+            "overall_score": None, "deal_score": None, "confidence_score": 0,
+            "liquidity_score": 0, "risk_score": assessment.risk_score,
+            "priority": assessment.priority,
+            "verdict": assessment.verdict, "needs_review": True,
+            "requires_review": True,
+            "score_reasons": [], "risk_reasons": list(assessment.risk_reasons),
+            "review_reasons": list(assessment.review_reasons),
+            "target_buy_price": None, "max_buy_price": None,
+            "expected_gross_profit": None,
+            "raw_score_band": assessment.raw_score_band}
 
 
 def _product_display_label(product: dict[str, object]) -> str:

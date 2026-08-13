@@ -3,20 +3,33 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from src.models import Listing
-from src.reporting import export_html, export_json, export_txt
+from src.models import Listing, ListingAvailability
+from src.reporting import collision_safe_export_path, export_html, export_json, export_txt
 from src.storage import ListingRepository
 
 
 class ReportingTests(unittest.TestCase):
+    def test_automatic_export_names_are_descriptive_and_never_overwrite(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            rows = [{"product_category": "gpu"}]
+            first = collision_safe_export_path(root, "txt", rows, export_kind="top-deals")
+            first.write_text("first", encoding="utf-8")
+            second = collision_safe_export_path(root, "txt", rows, export_kind="top-deals")
+            self.assertNotEqual(first, second)
+            self.assertRegex(first.name, r"^top-deals_gpu_\d{4}-\d{2}-\d{2}_\d{6}\.txt$")
+            self.assertFalse(second.exists())
+
     def test_all_formats_export_every_successfully_persisted_source(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
             with ListingRepository(root / "db.sqlite") as repository:
                 repository.upsert_many(
                     [
-                        Listing("avito", "1", "A & B", 10, "10 ₽", None, "https://example/a"),
-                        Listing("farpost", "2", "F", 20, "20 ₽", None, "https://example/f"),
+                        Listing("avito", "1", "A & B", 10, "10 ₽", None, "https://www.avito.ru/item_1",
+                                availability=ListingAvailability.ACTIVE),
+                        Listing("farpost", "2", "FarPost item", 20, "20 ₽", None, "https://www.farpost.ru/item-2.html",
+                                availability=ListingAvailability.ACTIVE),
                     ]
                 )
                 rows = repository.all()

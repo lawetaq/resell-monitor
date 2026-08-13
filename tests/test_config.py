@@ -43,3 +43,18 @@ class ConfigTests(unittest.TestCase):
             self.load('[{"name":"x","source":"avito","url":"https://example.test","network_route":"proxy"}]')
         with self.assertRaisesRegex(ValueError, "must not define proxy_url"):
             self.load('[{"name":"x","source":"avito","url":"https://example.test","proxy_url":"http://127.0.0.1:8080"}]')
+
+    def test_example_profiles_cover_cpu_ssd_and_motherboards_conservatively(self) -> None:
+        searches = load_searches(Path(__file__).parents[1] / "searches.example.json")
+        by_name = {search.name: search for search in searches}
+        expected = {
+            "Avito Khabarovsk processors": {"ryzen", "core i3", "core i5", "core i7"},
+            "Avito Khabarovsk SSD": {"ssd", "sata", "2.5", "m.2", "nvme"},
+            "Avito Khabarovsk motherboards": {"am4", "am5", "lga1200", "lga1700", "b550"},
+        }
+        for name, terms in expected.items():
+            search = by_name[name]
+            self.assertFalse(search.enabled)
+            self.assertTrue(terms.issubset(set(search.include_terms)))
+            self.assertEqual(search.max_block_retries, 1)
+            self.assertGreaterEqual(search.interval_seconds, 1800)

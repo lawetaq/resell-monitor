@@ -69,7 +69,8 @@ class MarketMathTests(unittest.TestCase):
         result = assess_resale(asking_price=50, median=100, q1=80, sample_count=2,
                                first_seen=None)
         self.assertIsNone(result.score)
-        self.assertEqual(result.recommendation, "INSUFFICIENT DATA")
+        self.assertEqual(result.recommendation, "NEEDS REVIEW")
+        self.assertEqual(result.raw_score_band, "INSUFFICIENT DATA")
 
     def test_estimated_resale_margin_and_fault_independence(self) -> None:
         result = assess_resale(asking_price=50, median=100, q1=80, sample_count=10,
@@ -100,7 +101,7 @@ class MarketPersistenceTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def _listings(self, prices: list[int], suffix: str = "") -> list[Listing]:
-        return [Listing("avito", str(i), f"RTX 3060 12GB {suffix}", price,
+        return [Listing("avito", str(i), f"Рабочая RTX 3060 12GB {suffix}", price,
                         f"{price} ₽", "Хабаровск", f"https://avito.ru/{i}")
                 for i, price in enumerate(prices)]
 

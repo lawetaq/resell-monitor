@@ -23,9 +23,10 @@ class MarketUXTests(unittest.TestCase):
             [SearchConfig("Components", "avito", "https://www.avito.ru/components")],
         )
         listings = [
-            Listing("avito", "g1", "RTX 3060 12GB", 20_000, "20 000 ₽", "Хабаровск", "https://www.avito.ru/g1"),
-            Listing("avito", "g2", "RTX 3060 12GB", 25_000, "25 000 ₽", "Хабаровск", "https://www.avito.ru/g2"),
-            Listing("avito", "g3", "RTX 3060 12GB", 30_000, "30 000 ₽", "Хабаровск", "https://www.avito.ru/g3"),
+            Listing("avito", "g1", "Рабочая RTX 3060 12GB", 20_000, "20 000 ₽", "Хабаровск", "https://www.avito.ru/g1"),
+            Listing("avito", "g2", "Рабочая RTX 3060 12GB", 25_000, "25 000 ₽", "Хабаровск", "https://www.avito.ru/g2"),
+            Listing("avito", "g3", "Рабочая RTX 3060 12GB", 30_000, "30 000 ₽", "Хабаровск", "https://www.avito.ru/g3"),
+            Listing("avito", "g5", "Рабочая RTX 3060 12GB", 35_000, "35 000 ₽", "Хабаровск", "https://www.avito.ru/g5"),
             Listing("avito", "g4", "RTX 3060 без указания памяти", 24_000, "24 000 ₽", "Хабаровск", "https://www.avito.ru/g4"),
             Listing("avito", "c1", "AMD Ryzen 5 5600", 10_000, "10 000 ₽", "Хабаровск", "https://www.avito.ru/c1"),
             Listing("avito", "r1", "DDR4 16GB 3200 MHz", 4_000, "4 000 ₽", "Хабаровск", "https://www.avito.ru/r1"),
@@ -107,6 +108,11 @@ class MarketUXTests(unittest.TestCase):
         self.assertIn("overflow-y:auto", css)
         self.assertIn("bindListingCandidates(candidates)", script)
         self.assertIn("bindListingCandidates(opportunityRoot)", script)
+        self.assertIn('value="motherboard"', script)
+        for field in ("price", "date", "rating"):
+            self.assertIn(f'data-sort="{field}"', html)
+        self.assertIn("state.listingSort.direction==='desc'", script)
+        self.assertIn("sort_direction", script)
         self.assertIn("openListing(x.dataset.source,x.dataset.id)", script)
 
 

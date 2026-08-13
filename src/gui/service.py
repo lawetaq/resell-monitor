@@ -3,16 +3,22 @@ from __future__ import annotations
 import threading
 import time
 import logging
+import platform
+import json
 from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
 from src.backend import _build_source
-from src.config import load_searches, parse_searches, save_searches
-from src.models import ListingStatus, SearchConfig
+from src.config import load_searches, parse_searches, save_searches, search_presets
+from src.models import ListingStatus, LocationProfile, SearchConfig
+from src.locations import (DEFAULT_LOCATION, build_search_url, detect_location_from_url,
+                           learn_location_from_url, profile_from_json,
+                           profile_setting_value, search_locations, source_resolution,
+                           validate_marketplace_url)
 from src.monitor import Monitor, SourceScan
-from src.reporting import export_html, export_json, export_txt
+from src.reporting import collision_safe_export_path, export_html, export_json, export_txt
 from src.scheduler import SearchScheduler
 from src.storage import ListingRepository, SearchAccessState
 from src.retail_monitor import RetailMonitor
@@ -80,9 +86,12 @@ class GuiService:
             for search in searches
         ]
 
+    def search_presets(self) -> list[dict[str, object]]:
+        return search_presets()
+
     def create_search(self, payload: dict[str, object]) -> dict[str, object]:
         searches = self._load_searches()
-        candidate = parse_searches([payload])[0]
+        candidate = parse_searches([self._prepare_search_payload(payload)])[0]
         if any(search.name == candidate.name for search in searches):
             raise ValueError(f"search named {candidate.name!r} already exists")
         searches.append(candidate)
@@ -98,14 +107,14 @@ class GuiService:
         searches = self._load_searches()
         index = self._search_index(searches, current_name)
         existing = searches[index]
-        merged = dict(payload)
+        merged = {**asdict(existing), **payload}
         if (
             merged.get("network_route", existing.network_route) == "proxy"
             and not merged.get("proxy_url")
             and existing.proxy_url
         ):
             merged["proxy_url"] = existing.proxy_url
-        candidate = parse_searches([merged])[0]
+        candidate = parse_searches([self._prepare_search_payload(merged)])[0]
         if any(
             search.name == candidate.name and position != index
             for position, search in enumerate(searches)
@@ -148,6 +157,9 @@ class GuiService:
                 max_price=_integer_or_none(values.get("max_price")),
                 text=_string_or_none(values.get("text")),
                 availability=_string_or_none(values.get("availability")),
+                location=_string_or_none(values.get("location")),
+                sort_by=_string_or_none(values.get("sort_by")),
+                sort_direction=_string_or_none(values.get("sort_direction")),
             )
 
     def listing_detail(self, source: str, external_id: str) -> dict[str, object]:
@@ -396,6 +408,13 @@ class GuiService:
                     "searches": len(
                         [search for search in searches if search.source == source]
                     ),
+                    "raw_items": sum(state.raw_items for state in source_states),
+                    "valid_listings": sum(state.valid_listings for state in source_states),
+                    "rejected_items": sum(state.rejected_items for state in source_states),
+                    "priced_listings": sum(state.priced_listings for state in source_states),
+                    "rejection_rate": round(
+                        sum(state.rejected_items for state in source_states) /
+                        max(1, sum(state.raw_items for state in source_states)) * 100, 1),
                 }
             )
         return result
@@ -424,6 +443,9 @@ class GuiService:
             "default_block_cooldown_seconds": 900,
             "default_max_block_retries": 1,
             "default_export_format": "json",
+            "default_search_editor": "simple",
+            "default_location": profile_setting_value(DEFAULT_LOCATION),
+            "custom_locations": "[]",
             "ui_refresh_seconds": 2,
             "market_lookback_days": 30,
             "retail_refresh_interval_hours": 12,
@@ -438,7 +460,7 @@ class GuiService:
             if key in stored:
                 defaults[key] = (
                     stored[key]
-                    if key == "default_export_format"
+                    if key in {"default_export_format", "default_search_editor", "default_location", "custom_locations"}
                     else stored[key] if key == "retail_region" else int(stored[key])
                 )
         return defaults
@@ -481,6 +503,16 @@ class GuiService:
                 raise ValueError(f"{key} must be enabled or disabled")
         if values["default_export_format"] not in {"json", "txt", "html"}:
             raise ValueError("default export format must be json, txt, or html")
+        if values["default_search_editor"] not in {"simple", "advanced"}:
+            raise ValueError("default search editor must be simple or advanced")
+        profile_from_json(str(values["default_location"]))
+        custom_rows = json.loads(str(values["custom_locations"]))
+        if not isinstance(custom_rows, list):
+            raise ValueError("custom locations must be a JSON array")
+        for row in custom_rows:
+            if not isinstance(row, dict):
+                raise ValueError("custom location entry must be an object")
+            LocationProfile(**row)
         with ListingRepository(self.database_path) as repository:
             repository.update_app_settings(values)
         return values
@@ -566,15 +598,19 @@ class GuiService:
             thread.join(timeout=5)
         return True
 
-    def export(self, format_name: str) -> Path:
+    def export(self, format_name: str, *, include_history: bool = False) -> Path:
         exporters = {"json": export_json, "txt": export_txt, "html": export_html}
         try:
             exporter = exporters[format_name]
         except KeyError as error:
             raise ValueError(f"unsupported export format: {format_name}") from error
-        path = self.output_dir / f"listings.{format_name}"
         with ListingRepository(self.database_path) as repository:
-            exporter(repository.all(), path)
+            rows = repository.listing_rows()
+        path = collision_safe_export_path(self.output_dir, format_name, rows)
+        if format_name == "json":
+            exporter(rows, path)
+        else:
+            exporter(rows, path, include_history=include_history)
         return path
 
     def copy_for_analysis(
@@ -615,7 +651,80 @@ class GuiService:
 
     def _run_scans(self, searches: list[SearchConfig]) -> list[SourceScan]:
         runner = self._external_scan_runner or self._default_scan_runner
-        return runner(searches, self._set_runtime_state)
+        default_location = self.default_location()
+        resolved = [replace(search, url=build_search_url(search, default_location))
+                    if search.preset_id else search for search in searches]
+        return runner(resolved, self._set_runtime_state)
+
+    def default_location(self):
+        return profile_from_json(str(self.settings()["default_location"]))
+
+    def locations(self, query: str = "") -> list[dict[str, object]]:
+        needle = query.casefold().strip()
+        profiles = [*search_locations(query), *[
+            profile for profile in self._custom_locations()
+            if not needle or any(needle in value.casefold() for value in
+                                 (profile.id, profile.display_name, *profile.aliases))
+        ]]
+        return [{**asdict(profile), "builtin": profile.id in {item.id for item in search_locations()},
+                 "source_status": source_resolution(profile)}
+                for profile in profiles]
+
+    def inspect_marketplace_url(self, url: str, source: str | None = None) -> dict[str, object]:
+        detected_source, location = detect_location_from_url(url, source)
+        return {"source": detected_source, "location": asdict(location) if location else None}
+
+    def learn_location(self, *, display_name: str, location_id: str,
+                       source: str, url: str, make_default: bool = False) -> dict[str, object]:
+        profile = learn_location_from_url(display_name, url, source=source, location_id=location_id)
+        custom = {item.id: item for item in self._custom_locations()}
+        previous = custom.get(profile.id)
+        if previous:
+            profile = LocationProfile(profile.id, profile.display_name,
+                                      profile.country or previous.country,
+                                      {**previous.source_tokens, **profile.source_tokens},
+                                      previous.aliases)
+        custom[profile.id] = profile
+        with ListingRepository(self.database_path) as repository:
+            repository.update_app_settings({"custom_locations": json.dumps(
+                [asdict(item) for item in custom.values()], ensure_ascii=False,
+            )})
+        if make_default:
+            self.update_settings({"default_location": profile_setting_value(profile)})
+        return {**asdict(profile), "source_status": source_resolution(profile)}
+
+    def _custom_locations(self) -> list[LocationProfile]:
+        with ListingRepository(self.database_path) as repository:
+            raw = repository.app_settings().get("custom_locations", "[]")
+        rows = json.loads(raw)
+        return [LocationProfile(**row) for row in rows if isinstance(row, dict)]
+
+    def diagnostic_report(self) -> str:
+        with ListingRepository(self.database_path) as repository:
+            schema = int(repository.connection.execute("PRAGMA user_version").fetchone()[0])
+            events = repository.monitoring_events(limit=5)
+        runtime = self.runtime()
+        safe_errors = [str(item.get("event_type", "event")) for item in events]
+        lines = ["Resell Monitor 0.1", f"Platform: {platform.system()} {platform.release()}",
+                 f"Database schema: {schema}", f"Database: {self.database_path}",
+                 f"Exports: {self.output_dir}", f"Runtime: {runtime['state']}",
+                 f"Last scan: {runtime['last_scan_at'] or 'never'}",
+                 "Sources: " + ", ".join(f"{row['source']}={row['health']}" for row in self.source_health()),
+                 "Recent event types: " + ", ".join(safe_errors)]
+        if runtime.get("last_error"):
+            lines.append("Latest error: " + _redact_diagnostic(str(runtime["last_error"])))
+        return "\n".join(lines)
+
+    def _prepare_search_payload(self, payload: dict[str, object]) -> dict[str, object]:
+        data = dict(payload)
+        preset_id = str(data.get("preset_id") or "").strip()
+        if preset_id:
+            data["preset_id"] = preset_id
+            data["url"] = ""
+        else:
+            source, clean = validate_marketplace_url(str(data.get("url") or ""), str(data.get("source") or ""))
+            data["source"], data["url"] = source, clean
+        return data
 
     def _default_scan_runner(
         self, searches: list[SearchConfig], progress: Callable[[str], None]
@@ -835,3 +944,8 @@ def _integer_or_none(value: object) -> int | None:
     if value in (None, ""):
         return None
     return int(str(value))
+
+
+def _redact_diagnostic(value: str) -> str:
+    value = __import__("re").sub(r"(?i)(token|key|secret|password|authorization)=?[^\s&]*", r"\1=[redacted]", value)
+    return __import__("re").sub(r"https?://[^\s]+", "[url redacted]", value)

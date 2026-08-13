@@ -1,0 +1,21 @@
+[
+  {"source":"youla","id":"nav1","title":"Женский гардероб","price":100,"location":"Хабаровск","url":"https://youla.ru/categories"},
+  {"source":"youla","id":"nav2","title":"Комплектующие и запчасти","price":100,"location":"Хабаровск","url":"https://youla.ru/habarovsk/kompyutery/komplektuyushchie"},
+  {"source":"avito","id":"rx1","title":"Рабочая Sapphire RX 570 4GB","price":3000,"location":"Хабаровск","url":"https://www.avito.ru/habarovsk/rx570_1"},
+  {"source":"farpost","id":"rx2","title":"Рабочая Sapphire RX 570 4GB","price":5000,"location":"Хабаровск","url":"https://www.farpost.ru/rx570-2.html"},
+  {"source":"farpost","id":"rx3","title":"Рабочая RX 570 4GB","price":5500,"location":"Хабаровск","url":"https://www.farpost.ru/rx570-3.html"},
+  {"source":"avito","id":"rx4","title":"Рабочая RX 570 4GB","price":6000,"location":"Хабаровск","url":"https://www.avito.ru/habarovsk/rx570_4"},
+  {"source":"avito","id":"rx5","title":"Рабочая RX 570 4GB","price":6000,"location":"Хабаровск","url":"https://www.avito.ru/habarovsk/rx570_5"},
+  {"source":"avito","id":"faultgpu","title":"RTX 3060 не работает, нет изображения","price":5000,"location":"Хабаровск","url":"https://www.avito.ru/habarovsk/fault_1"},
+  {"source":"farpost","id":"rdimm","title":"Серверная DDR4 16GB RDIMM ECC 2666","price":1200,"location":"Хабаровск","url":"https://www.farpost.ru/ram-1.html"},
+  {"source":"avito","id":"sodimm","title":"Рабочая DDR4 16GB SO-DIMM 3200","price":2500,"location":"Хабаровск","url":"https://www.avito.ru/habarovsk/ram_2"},
+  {"source":"avito","id":"cheapram","title":"DDR4 16GB 2133","price":1098,"location":"Хабаровск","url":"https://www.avito.ru/habarovsk/ram_3"},
+  {"source":"farpost","id":"ram2","title":"DDR4 16GB 2133","price":3000,"location":"Владивосток","url":"https://www.farpost.ru/ram-2.html"},
+  {"source":"avito","id":"ram3","title":"DDR4 16GB 2133","price":3200,"location":"Владивосток","url":"https://www.avito.ru/vladivostok/ram_4"},
+  {"source":"farpost","id":"ram4","title":"DDR4 16GB 2133","price":3500,"location":"Владивосток","url":"https://www.farpost.ru/ram-4.html"},
+  {"source":"avito","id":"multigpu","title":"GTX 1050, GTX 1650, RX 6400, RX 6500 без доп питания","price":4000,"location":"Хабаровск","url":"https://www.avito.ru/habarovsk/gpus_1"},
+  {"source":"farpost","id":"multiram","title":"DDR4 4/8/16/32 GB — разные модули","price":6000,"location":"Хабаровск","url":"https://www.farpost.ru/ram-5.html"},
+  {"source":"avito","id":"cpu1","title":"Рабочий AMD Ryzen 5 5500","price":4500,"location":"Хабаровск","url":"https://www.avito.ru/habarovsk/cpu_1"},
+  {"source":"farpost","id":"ssd1","title":"Рабочий SSD NVMe 1TB","price":5000,"location":"Хабаровск","url":"https://www.farpost.ru/ssd-1.html"},
+  {"source":"avito","id":"mb1","title":"Рабочая материнская плата AM4 B550","price":6500,"location":"Хабаровск","url":"https://www.avito.ru/habarovsk/mb_1"}
+]

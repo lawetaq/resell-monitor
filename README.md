@@ -137,6 +137,12 @@ source and URL and may define local include/exclude terms, brands, price bounds,
 target price, scan interval, jitter, block retry/cooldown behavior, and Avito
 transport profile.
 
+The examples include one conservative Khabarovsk Avito query each for processors,
+SSDs, and motherboards. They are disabled by default, run no more often than every
+30 minutes when enabled, and filter locally for common Ryzen/Core, SATA/M.2/NVMe,
+and AM4/AM5/LGA1200/LGA1700/chipset terms. Copy or merge only the profiles you
+need into `searches.json`; they retain the normal cooldown and block handling.
+
 Direct routing is the default. A user-supplied proxy URL is accepted only when a
 search explicitly selects proxy routing. Proxy URLs may contain credentials, so
 real configuration files and their backups must never be committed.
@@ -160,6 +166,11 @@ Default runtime paths, relative to the working directory, are:
 These paths are ignored by Git. Do not publish databases, browser profiles,
 debug responses, generated reports, or configuration backups.
 
+Automatic exports use collision-safe local-time names such as
+`listings_gpu_2026-08-10_180512.txt`. TXT, JSON, and HTML include normalized
+identity, availability/condition, compatible used-market evidence, decomposed
+deal/confidence/liquidity/risk scores, priority/verdict, and review reasons.
+
 ## Market and availability semantics
 
 Historical price observations remain part of market snapshots even after a
@@ -167,6 +178,13 @@ listing becomes stale or unavailable. Current opportunities are stricter:
 archived and disappeared listings are never actionable, while stale and unknown
 listings are excluded by default. This prevents an old cheap listing from being
 presented as a current buying opportunity.
+
+Candidate validation runs before normal persistence. Source health therefore
+tracks raw, valid, rejected, and priced items; an HTTP 200 response with mostly
+navigation/UI artifacts is degraded rather than healthy. Used-market ranking is
+cross-source, excludes the candidate itself, faulty or price-ambiguous offers,
+and conservative near-duplicates. A sufficiently large exact-location pool is
+preferred; otherwise the broader pool is labeled and confidence is reduced.
 
 ## Retail diagnostics
 

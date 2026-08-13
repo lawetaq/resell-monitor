@@ -85,6 +85,8 @@ def create_handler(service: GuiService) -> type[BaseHTTPRequestHandler]:
                 self._json(HTTPStatus.OK, service.dashboard())
             elif parsed.path == "/api/searches":
                 self._json(HTTPStatus.OK, service.searches())
+            elif parsed.path == "/api/search-presets":
+                self._json(HTTPStatus.OK, service.search_presets())
             elif parsed.path == "/api/listings":
                 self._json(HTTPStatus.OK, service.listings(query))
             elif parsed.path.startswith("/api/listings/"):
@@ -101,6 +103,10 @@ def create_handler(service: GuiService) -> type[BaseHTTPRequestHandler]:
                 self._json(HTTPStatus.OK, service.runtime())
             elif parsed.path == "/api/settings":
                 self._json(HTTPStatus.OK, service.settings())
+            elif parsed.path == "/api/locations":
+                self._json(HTTPStatus.OK, service.locations(query.get("q", "")))
+            elif parsed.path == "/api/diagnostics":
+                self._json(HTTPStatus.OK, {"text": service.diagnostic_report()})
             elif parsed.path == "/api/retail/health":
                 self._json(HTTPStatus.OK, service.retail_health())
             elif parsed.path == "/api/retail/browser":
@@ -149,7 +155,9 @@ def create_handler(service: GuiService) -> type[BaseHTTPRequestHandler]:
             elif path == "/api/monitor/stop":
                 self._json(HTTPStatus.OK, {"stopped": service.stop_monitoring()})
             elif path == "/api/export":
-                export_path = service.export(str(self._body()["format"]))
+                payload = self._body()
+                export_path = service.export(str(payload["format"]),
+                                             include_history=bool(payload.get("include_history")))
                 self._json(HTTPStatus.OK, {"path": str(export_path)})
             elif path == "/api/copy":
                 payload = self._body()
@@ -168,6 +176,16 @@ def create_handler(service: GuiService) -> type[BaseHTTPRequestHandler]:
                 )
             elif path == "/api/settings":
                 self._json(HTTPStatus.OK, service.update_settings(self._body()))
+            elif path == "/api/location/inspect":
+                payload = self._body()
+                self._json(HTTPStatus.OK, service.inspect_marketplace_url(
+                    str(payload["url"]), str(payload.get("source") or "") or None))
+            elif path == "/api/location/learn":
+                payload = self._body()
+                self._json(HTTPStatus.OK, service.learn_location(
+                    display_name=str(payload["display_name"]), location_id=str(payload["location_id"]),
+                    source=str(payload["source"]), url=str(payload["url"]),
+                    make_default=bool(payload.get("make_default"))))
             elif path == "/api/retail/refresh":
                 payload = self._body()
                 self._json(HTTPStatus.ACCEPTED, {"started": service.trigger_retail_refresh(

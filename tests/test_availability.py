@@ -40,7 +40,8 @@ class AvailabilityTests(unittest.TestCase):
             self.observe(repository, [self.listing("old", 1_000)], self.now - timedelta(days=365))
             rows = {row["external_id"]: row for row in repository.listing_rows()}
             self.assertEqual(rows["recent"]["availability"], "active")
-            self.assertTrue(rows["recent"]["is_actionable"])
+            self.assertTrue(rows["recent"]["is_available"])
+            self.assertFalse(rows["recent"]["is_actionable"])
             self.assertEqual(rows["old"]["availability"], "stale")
             self.assertFalse(rows["old"]["is_actionable"])
             self.assertNotIn(rows["old"]["recommendation"], {"BUY", "GOOD DEAL"})

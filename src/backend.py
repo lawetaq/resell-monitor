@@ -3,12 +3,13 @@ from __future__ import annotations
 import argparse
 import logging
 import time
+from datetime import datetime
 from pathlib import Path
 
 from src.config import load_searches
 from src.models import SearchConfig
 from src.monitor import Monitor
-from src.reporting import export_html, export_json, export_txt
+from src.reporting import collision_safe_export_path, export_html, export_json, export_txt
 from src.scheduler import SearchScheduler
 from src.sources.avito import AvitoSource
 from src.sources.farpost import FarPostSource
@@ -24,6 +25,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--debug-dir", type=Path)
     result.add_argument("--output-dir", type=Path, default=Path("output"))
     result.add_argument("--loop", action="store_true", help="run continuously using each search's own interval")
+    result.add_argument("--include-history", action="store_true", help="include unavailable listings in human-oriented exports")
     return result
 
 
@@ -76,10 +78,15 @@ def run(argv: list[str] | None = None) -> int:
                     + health_detail
                     + (f"; {scan.error}" if scan.error else "")
                 )
-            rows = repository.all()
-            export_json(rows, args.output_dir / "listings.json")
-            export_txt(rows, args.output_dir / "listings.txt")
-            export_html(rows, args.output_dir / "listings.html")
+            rows = repository.listing_rows()
+            exported_at = datetime.now().astimezone()
+            for extension, exporter in (("json", export_json), ("txt", export_txt),
+                                        ("html", export_html)):
+                path = collision_safe_export_path(args.output_dir, extension, rows, timestamp=exported_at)
+                if extension == "json":
+                    exporter(rows, path)
+                else:
+                    exporter(rows, path, include_history=args.include_history)
             if not args.loop:
                 return 0 if any(scan.health.value != "failed" for scan in scans) else 1
     except KeyboardInterrupt:

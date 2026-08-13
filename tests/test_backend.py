@@ -81,10 +81,11 @@ class BackendTests(unittest.TestCase):
                 retries=0,
             )
             scans = monitor.scan([SearchConfig("bad", "bad", "https://example/bad"), SearchConfig("good", "good", "https://example/good")])
-            self.assertEqual(scans[0].health.value, "failed")
+            self.assertEqual(scans[0].health.value, "degraded")
             self.assertEqual(scans[1].health.value, "healthy")
             rows = repo.all()
-            self.assertEqual([(row["source"], row["external_id"]) for row in rows], [("good", "2")])
+            self.assertEqual([(row["source"], row["external_id"]) for row in rows],
+                             [("good", "2"), ("test", "1")])
             repo.close()
 
     def test_retries_only_transient_errors(self) -> None:
