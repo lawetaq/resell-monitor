@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.lawetaq.ResellMonitor</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Resell Monitor</name>
+  <summary>Local marketplace monitoring and resale analytics</summary>
+  <description>
+    <p>
+      Resell Monitor is a local-first desktop application for monitoring PC
+      component listings and reviewing potentially underpriced offers.
+    </p>
+    <p>
+      It keeps searches, listing history, settings, and analytics on the user's
+      computer. Marketplace results are normalized into one interface with
+      saved searches, lifecycle tracking, deterministic ranking, and exports.
+    </p>
+  </description>
+  <launchable type="desktop-id">resell-monitor.desktop</launchable>
+  <url type="homepage">https://github.com/lawetaq/resell-monitor</url>
+  <categories>
+    <category>Utility</category>
+  </categories>
+  <keywords>
+    <keyword>marketplace</keyword>
+    <keyword>monitor</keyword>
+    <keyword>resale</keyword>
+    <keyword>components</keyword>
+  </keywords>
+</component>

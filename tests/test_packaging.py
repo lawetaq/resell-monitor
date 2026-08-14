@@ -280,6 +280,9 @@ class PackagingContractTests(unittest.TestCase):
             (packaging / "resell-monitor.desktop").write_bytes(
                 (source_root / "packaging/resell-monitor.desktop").read_bytes()
             )
+            (packaging / "resell-monitor.metainfo.xml").write_bytes(
+                (source_root / "packaging/resell-monitor.metainfo.xml").read_bytes()
+            )
             branding = root / "assets/branding"
             branding.mkdir(parents=True)
             (branding / "resell-monitor-256.png").write_bytes(
@@ -292,6 +295,9 @@ class PackagingContractTests(unittest.TestCase):
             self.assertTrue((appdir / "usr/bin/ResellMonitor").is_symlink())
             self.assertTrue((appdir / "resell-monitor.desktop").is_file())
             self.assertTrue((appdir / "resell-monitor.png").is_file())
+            self.assertTrue(
+                (appdir / "usr/share/metainfo/resell-monitor.metainfo.xml").is_file()
+            )
             names = {path.name for path in appdir.rglob("*")}
             self.assertNotIn("searches.json", names)
             self.assertNotIn("resell-monitor.db", names)
@@ -302,7 +308,8 @@ class PackagingContractTests(unittest.TestCase):
         service = (root / "src/gui/service.py").read_text()
         desktop_entry = (root / "packaging/resell-monitor.desktop").read_text()
         self.assertRegex(__version__, r"^\d+\.\d+\.\d+$")
-        self.assertIn("__APP_VERSION__", index)
+        self.assertIn("api('/api/project')", (root / "src/gui/static/app.js").read_text())
+        self.assertIn("version", index)
         self.assertIn("from src.version import __version__", service)
         self.assertIn("Exec=ResellMonitor", desktop_entry)
         self.assertNotIn("~/.local/share/applications", desktop_entry)

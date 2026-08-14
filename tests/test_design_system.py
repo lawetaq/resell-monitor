@@ -70,8 +70,9 @@ class DesignSystemTests(unittest.TestCase):
             self.assertIn(rule, self.css)
 
     def test_settings_save_is_a_compact_action_row(self) -> None:
-        self.assertIn('<div class="settings-actions"><button class="btn primary" id="save-settings"', self.html)
+        self.assertIn('<div class="settings-actions" id="settings-actions"><button class="btn primary" id="save-settings"', self.html)
         self.assertIn(".settings-actions{display:flex;justify-content:flex-end", self.css)
+        self.assertIn(".settings-actions[hidden]{display:none}", self.css)
         self.assertIn("'settings.save':'Save changes'", self.i18n)
         self.assertIn("'settings.save':'Сохранить изменения'", self.i18n)
 

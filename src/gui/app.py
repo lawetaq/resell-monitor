@@ -150,6 +150,8 @@ def create_handler(
                 self._json(HTTPStatus.OK, service.runtime())
             elif parsed.path == "/api/settings":
                 self._json(HTTPStatus.OK, service.settings())
+            elif parsed.path == "/api/project":
+                self._json(HTTPStatus.OK, service.project_info())
             elif parsed.path == "/api/cleanup/preview":
                 self._json(HTTPStatus.OK, service.cleanup_preview())
             elif parsed.path == "/api/locations":
@@ -225,6 +227,8 @@ def create_handler(
                 )
             elif path == "/api/settings":
                 self._json(HTTPStatus.OK, service.update_settings(self._body()))
+            elif path == "/api/updates/check":
+                self._json(HTTPStatus.OK, service.check_for_updates())
             elif path == "/api/cleanup/apply":
                 payload = self._body()
                 self._json(HTTPStatus.OK, service.apply_cleanup(

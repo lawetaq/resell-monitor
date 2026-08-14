@@ -1,223 +1,183 @@
 # Resell Monitor
 
-Resell Monitor is a local marketplace monitoring and resale-analytics application
-for finding potentially underpriced PC components. The current default region and
-example searches target Khabarovsk, but the normalized domain and storage layers
-are marketplace-independent.
+[![Version](https://img.shields.io/badge/version-0.1.0--alpha-orange)](CHANGELOG.md)
+[![Platform](https://img.shields.io/badge/platform-Linux%20x86__64-blue)](#installation)
+[![Python](https://img.shields.io/badge/Python-3.13-blue)](#development)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-The application stores observations locally and uses deterministic analytics; it
-does not use AI to value listings.
+**Alpha** — a local-first desktop marketplace monitor for finding and evaluating
+potentially underpriced PC components.
 
-## Current functionality
+Resell Monitor brings saved searches, normalized listings, price history, and
+deterministic deal analysis into one desktop interface. It is designed around
+Khabarovsk today, keeps mutable application data outside the installation, and
+does not use AI for valuation.
 
-- Source-adapter architecture for Avito, FarPost, and Youla.
-- Conservative, sequential marketplace access with bounded retry/cooldown state.
-- SQLite persistence, duplicate detection, listing history, and price history.
-- PC-component normalization and comparable-product matching for GPUs, CPUs,
-  RAM, and SSDs.
-- Explicit `ACTIVE`, `STALE`, `DISAPPEARED`, `ARCHIVED`, and `UNKNOWN`
-  availability semantics.
-- Condition and risk-phrase detection independent of resale scoring.
-- Dynamic resale scoring using local comparable observations and market trends.
-- Historical used-price snapshots, quartiles, activity, and turnover signals.
-- Retail-intelligence interfaces and experimental DNS, Ozon, and Wildberries
-  providers.
-- Local web GUI, background monitoring, saved searches, filters, and JSON/TXT/HTML
-  exports.
-- Offline parser, analytics, persistence, migration, GUI-service, and scheduler
-  tests.
+No approved product screenshots are committed yet. The repository has a
+[media contribution structure](docs/media/README.md) ready for real captures.
 
-Retail live access is experimental. DNS, Ozon, or Wildberries may block or alter
-consumer-facing endpoints depending on network, region, and provider behavior.
-Retail data is treated as secondary evidence and does not become authoritative
-when it is stale, ambiguous, or low-confidence.
+## Features
 
-## Safety and request policy
-
-Use a small number of broad, first-page searches and filter results locally.
-Scans run sequentially at conservative intervals. The application does not
-bypass CAPTCHAs, rotate proxies, randomize identities, or use stealth libraries.
-It does not request listing-detail pages merely to determine availability.
-
-Avito attempts use ordinary HTTP retrieval first, embedded frontend JSON when
-available, and Playwright only as a fallback. HTTP 403/429 responses do not
-trigger escalating transport retries; the search records its state and observes
-configured retry/cooldown limits.
-
-## Requirements
-
-- Python 3.13
-- A supported Linux environment for the current development workflow
-- Chromium only if the optional Playwright fallback or diagnostics are used
-
-Runtime Python dependencies are listed in `requirements.txt`.
+- Saved marketplace searches and conservative sequential scanning.
+- Shared listing view for Avito, FarPost, and Youla adapters.
+- Duplicate detection, listing history, price history, and explicit lifecycle states.
+- Rule-based ranking with comparable-market, condition, confidence, liquidity, and risk signals.
+- Listing thumbnails, inbox cleanup, sorting, filters, and market analytics.
+- TXT, JSON, and HTML exports.
+- Russian and English interfaces and multiple themes.
+- Native Linux desktop window using pywebview and Qt.
+- Local SQLite persistence with verified backups before schema migrations.
+- Experimental, manual Browser-Assisted Retail evidence.
 
 ## Installation
 
-From the repository root:
+The first packaged release targets Linux x86_64. Neither method requires Python
+on the end user's machine.
+
+### Portable AppImage
+
+Download the release bundle, verify its checksum, then run:
+
+```bash
+sha256sum -c ResellMonitor-0.1.0-x86_64.AppImage.sha256
+chmod +x ResellMonitor-0.1.0-x86_64.AppImage
+./ResellMonitor-0.1.0-x86_64.AppImage
+```
+
+### User installation
+
+The release bundle includes the helper and branding assets needed to add Resell
+Monitor to KDE, GNOME, and other freedesktop-compatible application menus:
+
+```bash
+./install_linux_user.sh ./ResellMonitor-0.1.0-x86_64.AppImage
+```
+
+No root access is required. This installs the executable at
+`~/.local/bin/resell-monitor`, a desktop entry under
+`~/.local/share/applications/`, and icons under the user hicolor icon theme.
+
+To remove the executable and desktop integration while preserving all data:
+
+```bash
+./uninstall_linux_user.sh
+```
+
+## Quick start
+
+Launching the application does not start a marketplace scan. Add or review a
+saved search, then use **Scan now** or **Start monitoring** explicitly. Keep the
+number of searches and request frequency conservative.
+
+## Supported sources
+
+| Source | Current status |
+| --- | --- |
+| Avito | Primary source; HTTP and embedded frontend data first, Playwright fallback when needed |
+| FarPost | Available with more limited capabilities than Avito |
+| Youla | Experimental and may be degraded when embedded product data is unavailable |
+
+DNS, Ozon, and Wildberries integrations provide experimental retail comparison
+evidence. They are not equivalent marketplace sources and can be blocked by
+provider behavior.
+
+## How it works
+
+Marketplace adapters normalize raw responses into one shared listing model.
+Resell Monitor validates and stores observations locally, tracks availability
+and price history, then applies transparent deterministic rules and comparable
+market evidence. Marketplace-specific raw dictionaries remain inside adapters.
+
+Access is intentionally conservative. The project does not bypass CAPTCHAs,
+rotate proxies automatically, or use stealth/anti-detection libraries.
+
+## Data and privacy
+
+Resell Monitor is currently local-first. Searches, settings, listing history,
+analytics, exports, and browser-assisted profiles are stored in the user's
+environment. Marketplace and configured retail access originates from that
+environment according to the selected source and route.
+
+Typical packaged Linux paths are:
+
+- Database, settings, exports, and backups: `~/.local/share/resell-monitor/`
+- Saved-search configuration: `~/.config/resell-monitor/`
+- Cache: `~/.cache/resell-monitor/`
+- Logs and diagnostics: `~/.local/state/resell-monitor/log/`
+
+The application respects XDG overrides, so expanded paths can differ. Replacing
+or uninstalling the AppImage does not remove history, searches, or settings.
+Source/development mode retains repository-local `data/`, `searches.json`,
+`output/`, and `debug/` defaults.
+
+## Updating
+
+There is no auto-update. Download the newer release bundle and run its installer
+with the newer AppImage. The helper atomically replaces the stable executable
+path and refreshes integration assets; the separate data/configuration paths are
+untouched. Portable users can replace their AppImage file directly.
+
+Settings → About provides a manual availability check against this project's
+GitHub Releases. It contacts GitHub only when requested and can open the release
+page; it never downloads or installs an update automatically.
+
+## Development
+
+Requirements: Python 3.13 and a supported Linux development environment.
 
 ```bash
 python3.13 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install -r requirements-desktop.txt
 cp searches.example.json searches.json
+.venv/bin/python -m src.desktop --gui qt
 ```
 
-The example searches are disabled. Review their URLs and filters, then enable
-only the searches you intend to run. `searches.json` is local configuration and
-is intentionally ignored by Git.
-
-For the default Browser-Assisted Retail engine, install Playwright Firefox separately:
-
-```bash
-.venv/bin/python -m playwright install firefox
-```
-
-Chromium remains available as an explicit alternative via
-`.venv/bin/python -m playwright install chromium`.
-
-## Running the GUI
+The example searches are disabled. Browser development mode remains available:
 
 ```bash
 .venv/bin/python -m src.gui.app --config searches.json
 ```
 
-The GUI binds to `127.0.0.1:8765` and opens the default browser. Opening the GUI
-does not scan marketplaces. Use **Scan now** or **Start monitoring** explicitly.
-For a headless machine:
+GTK is an optional development backend when its distribution packages and
+pywebview requirements are installed:
 
 ```bash
-.venv/bin/python -m src.gui.app --config searches.json --no-browser
+python -m src.desktop --gui gtk
 ```
 
-Useful overrides include `--database`, `--output-dir`, `--debug-dir`, `--host`,
-and `--port`. See all options with:
+Browser-Assisted Retail and the Avito Playwright fallback require a separately
+installed browser runtime. Firefox is the default browser-assisted retail engine:
 
 ```bash
-.venv/bin/python -m src.gui.app --help
+.venv/bin/python -m playwright install firefox
 ```
 
-### Desktop shell (Linux first)
-
-Desktop mode reuses the same local server, frontend, configuration, and SQLite
-database inside a native pywebview window. Qt is the manually accepted and default
-dependency path for Desktop v1 on Linux. Install it with:
+Run the offline suite without performing marketplace scans:
 
 ```bash
-.venv/bin/python -m pip install -r requirements-desktop.txt
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-Launch it from the same working directory and use the same data-path options as
-browser mode:
+## Building
 
-```bash
-.venv/bin/python -m src.desktop --gui qt
-.venv/bin/python -m src.desktop --debug
-```
-
-`requirements-desktop.txt` installs `pywebview[qt]` only on Linux. On future Windows
-or macOS installations it installs base pywebview instead of forcing Linux Qt
-packages. The launcher can also choose the installed backend automatically, so
-`python -m src.desktop` remains valid when the environment has one working backend.
-
-GTK remains an optional Linux alternative. Install the Python GTK bindings,
-WebKitGTK, and any pywebview GTK requirements appropriate to the distribution,
-then launch with `python -m src.desktop --gui gtk`. Package names vary by Linux
-distribution; the application does not download system GUI runtimes itself.
-
-Desktop mode binds only to `127.0.0.1` on an OS-selected ephemeral port and uses a
-random one-launch session. Browser development mode remains independent and does
-not require pywebview.
-
-### Standalone Linux build (ONEDIR)
-
-Packaging uses PyInstaller to produce a directory containing the executable,
-Python runtime, pywebview, and the accepted Qt backend. Build dependencies are
-separate from browser and ordinary desktop runtime requirements:
+Install build dependencies and build the accepted PyInstaller ONEDIR package:
 
 ```bash
 .venv/bin/python -m pip install -r requirements-build.txt
 PYTHON=.venv/bin/python scripts/build_linux.sh
 ```
 
-The artifact is `dist/ResellMonitor/ResellMonitor`. It can be launched from any
-working directory and does not require the end user to install Python or pip.
-The build is intentionally ONEDIR for initial Linux acceptance; AppImage,
-one-file packaging, installers, and signing are deferred.
-
-The bundle contains read-only GUI files and the location registry. It never
-contains a user database or mutable `searches.json`. The Qt build excludes the
-pywebview GTK backend. Native Linux Qt/WebEngine shared-library compatibility
-still depends on the distribution and must be validated on each supported
-release before the artifact is described as portable.
-
-The repository includes `packaging/resell-monitor.desktop` as a non-installing
-desktop-entry template. Its `Exec` value must be adjusted or installed together
-with the final bundle by a later installer; builds and tests do not modify the
-user's application menu.
-
-### AppImage distribution (Linux x86_64)
-
-AppImage packaging wraps the validated PyInstaller ONEDIR bundle; it does not
-create a second application implementation. Obtain the official x86_64
-`appimagetool` separately, make it executable, and provide its absolute path:
+Build an AppImage with an externally obtained `appimagetool` (the scripts never
+download it):
 
 ```bash
-chmod +x /absolute/path/to/appimagetool-x86_64.AppImage
 APPIMAGETOOL=/absolute/path/to/appimagetool-x86_64.AppImage \
-  PYTHON=.venv/bin/python scripts/build_appimage.sh
+PYTHON=.venv/bin/python scripts/build_appimage.sh
 ```
 
-The script fails without downloading anything when `appimagetool` is missing.
-It rebuilds the ONEDIR package, assembles
-`build/appimage/ResellMonitor.AppDir/`, and writes the versioned artifact:
-
-```text
-dist/ResellMonitor-0.1.0-x86_64.AppImage
-```
-
-The version is read from `src/version.py`; the filename above is illustrative
-for the current version. `APPIMAGETOOL=appimagetool` is unnecessary when the
-tool is already on `PATH`.
-
-`AppRun` locates the read-only mounted AppDir from its own path and executes the
-bundled ONEDIR binary. It does not redirect configuration or data into the mount,
-the AppImage directory, or the caller's working directory. Frozen application
-data therefore continues to use the stable platformdirs locations documented
-below, independent of application version or AppImage filename.
-
-AppImage improves distribution convenience but does not guarantee universal
-Linux portability. The build retains the ONEDIR bundle's glibc, Qt WebEngine,
-Qt platform-plugin, graphics-driver, and display-server compatibility limits.
-Normal AppImage execution may require FUSE. Standard AppImage runtimes generally
-support `--appimage-extract-and-run` on hosts without FUSE; verify that mode with
-the produced artifact during acceptance rather than assuming every runtime and
-distribution supports it.
-
-#### Linux runtime diagnostics
-
-Qt WebEngine probes available Chromium/Qt graphics backends during startup. On
-systems with more than one render node or an incompatible Vulkan device, it may
-print a `VK_ERROR_INCOMPATIBLE_DRIVER` message while selecting a usable backend.
-If the Resell Monitor window renders normally, this is a non-fatal probe/fallback
-diagnostic. Hardware acceleration is intentionally left enabled; do not set
-`--disable-gpu` merely to silence it. Investigate only if the window is blank,
-corrupted, or crashes, using Qt's `qt.webenginecontext` and
-`qt.webengine.compositor` logging categories to identify the active renderer.
-
-Some pywebview/Qt combinations also print `Release of profile requested but
-WebEnginePage still not deleted` at process exit. pywebview schedules its
-`QWebEnginePage` with `deleteLater()` and then exits the Qt event loop, so Qt can
-emit this warning if deferred deletion has not completed before its private
-profile is released. Resell Monitor performs no Qt profile management itself.
-When the process exits, the loopback listener closes, and no Chromium or
-ResellMonitor process remains, the message is a shutdown-order diagnostic rather
-than evidence that application data or server resources were left active.
-Suppressing it would require depending on pywebview's private Qt objects, which
-the application intentionally avoids.
-
-For acceptance, capture the repository artifact path before changing directory
-or use an absolute path. This avoids referring to `dist/` from `/tmp`:
+For a smoke test outside the checkout, resolve the artifact before changing
+directories:
 
 ```bash
 artifact="$(pwd)/dist/ResellMonitor-0.1.0-x86_64.AppImage"
@@ -226,246 +186,49 @@ cd /tmp
 ./ResellMonitor-0.1.0-x86_64.AppImage
 ```
 
-After closing the window, these checks should return no matching process and no
-listening Resell Monitor socket respectively:
+Build the complete release bundle by composing that existing AppImage build:
+
+```bash
+APPIMAGETOOL=/absolute/path/to/appimagetool-x86_64.AppImage \
+PYTHON=.venv/bin/python scripts/build_release_linux.sh
+```
+
+Outputs are written to `dist/release/`, including the AppImage, checksum,
+release notes, user installation helpers, desktop metadata, and icons. See the
+[release checklist](docs/RELEASING.md).
+
+## Known limitations
+
+- This is alpha software; the AppImage currently targets Linux x86_64 and has limited distribution coverage.
+- Marketplace and retail endpoints can change or block access, reducing source availability.
+- Source feature parity differs; Avito currently has stronger image support than FarPost and Youla.
+- Browser-Assisted Retail remains experimental and requires deliberate user interaction.
+- Qt may print harmless Vulkan probing or WebEngine teardown warnings on some systems even when launch and shutdown succeed.
+- Windows packaging and auto-update are not implemented.
+
+### Linux desktop diagnostics
+
+Qt WebEngine can print `VK_ERROR_INCOMPATIBLE_DRIVER` while probing graphics
+backends; if the window renders normally, this is generally a non-fatal fallback.
+Some pywebview/Qt combinations also print
+`Release of profile requested but WebEnginePage still not deleted` during
+teardown. After closing, verify that no process or listener remains:
 
 ```bash
 pgrep -af 'ResellMonitor|QtWebEngineProcess'
 ss -ltnp | grep ResellMonitor
 ```
 
-### Browser-assisted retail
+## Roadmap
 
-Browser-assisted capture is manual and opt-in. Install Playwright Firefox, run
-the GUI normally, select a normalized product on Market, then use the
-**Browser-assisted retail** panel:
+- Windows distribution after the Linux release path is validated.
+- Improved notifications and richer image/gallery support.
+- Marketplace source quality and parity improvements.
+- Security hardening and broader Linux compatibility validation.
+- Release automation after the manual release pipeline is proven.
 
-1. Save a canonical DNS, Ozon, or Wildberries product URL.
-2. Select Firefox (recommended) or Chromium, then click **Open browser**. Each
-   engine uses its own dedicated local profile under `data/playwright/`.
-3. Click the mapping's **Open** button. Complete normal region selection, dialogs,
-   or a site challenge yourself if necessary.
-4. Optionally enter a region only after confirming it in the visible site.
-5. Click **Capture**. Capture inspects the already-loaded page and relevant
-   first-party JSON responses; it makes no hidden HTTP request or reload.
+No dates are promised; priorities follow tested product needs.
 
-Market page loads and searches never launch a retail browser. Browser capture is not a
-CAPTCHA solver, stealth transport, or scheduled crawler. **Reset profile** closes
-the retail browser and deletes only its dedicated profile after confirmation.
+## License
 
-## Running the backend
-
-Run one pass:
-
-```bash
-.venv/bin/python -m src.backend --config searches.json
-```
-
-Run continuous background monitoring using each search's configured interval:
-
-```bash
-.venv/bin/python -m src.backend --config searches.json --loop
-```
-
-## Configuration
-
-`searches.example.json` documents safe, disabled examples. Each search selects a
-source and URL and may define local include/exclude terms, brands, price bounds,
-target price, scan interval, jitter, block retry/cooldown behavior, and Avito
-transport profile.
-
-The examples include one conservative Khabarovsk Avito query each for processors,
-SSDs, and motherboards. They are disabled by default, run no more often than every
-30 minutes when enabled, and filter locally for common Ryzen/Core, SATA/M.2/NVMe,
-and AM4/AM5/LGA1200/LGA1700/chipset terms. Copy or merge only the profiles you
-need into `searches.json`; they retain the normal cooldown and block handling.
-
-Direct routing is the default. A user-supplied proxy URL is accepted only when a
-search explicitly selects proxy routing. Proxy URLs may contain credentials, so
-real configuration files and their backups must never be committed.
-
-Application settings edited in the GUI are stored in the local SQLite database.
-Retail product mappings are also local database data and may contain private or
-personal URLs.
-
-## Local data and exports
-
-Default runtime paths, relative to the working directory, are:
-
-- Database and app settings: `data/resell-monitor.db`
-- Persistent Playwright data: `data/playwright/`
-- Browser-assisted Firefox profile: `data/playwright/retail-firefox-profile/`
-- Browser-assisted Chromium profile: `data/playwright/retail-chromium-profile/`
-- User search configuration: `searches.json`
-- Reports and source diagnostics: `output/`
-- Retail diagnostics: `debug/retail/`
-
-These paths are ignored by Git. Do not publish databases, browser profiles,
-debug responses, generated reports, or configuration backups.
-
-### Packaged user data and upgrades
-
-Source/browser development mode keeps the project-local defaults above. Explicit
-`--config`, `--database`, and `--output-dir` arguments keep their existing
-meaning. A frozen desktop build instead uses `platformdirs`, so typical Linux
-locations are:
-
-- Database and settings: `~/.local/share/resell-monitor/resell-monitor.db`
-- Exports: `~/.local/share/resell-monitor/exports/`
-- Schema backups: `~/.local/share/resell-monitor/backups/`
-- Saved searches: `~/.config/resell-monitor/searches.json`
-- Cache: `~/.cache/resell-monitor/`
-- Logs/diagnostics root: `~/.local/state/resell-monitor/log/`
-
-These locations respect the platform's XDG variables, so the exact expanded
-paths can differ. Windows and macOS paths are selected by `platformdirs` rather
-than hardcoded by the application.
-
-On first packaged startup, directories and an empty saved-search configuration
-are created automatically. If the executable is in the repository's exact
-`dist/ResellMonitor/` build layout and the persistent destination is empty, the
-known project-local `data/resell-monitor.db` and `searches.json` are copied with
-their originals left untouched. For another trusted legacy project location,
-launch once with `--legacy-root /absolute/path/to/resell-monitor`. Existing
-persistent files always win; databases are never merged or overwritten.
-
-Before upgrading an existing database schema, Resell Monitor creates and verifies
-a SQLite-consistent backup in the persistent `backups/` directory. No backup is
-made when the schema is already current. A backup or migration failure stops
-startup instead of substituting an empty database. An older application also
-refuses to open a database whose schema is newer than it supports.
-
-This separation is the update contract: replace the application bundle while
-leaving the platformdirs data/config directories in place. The new build opens
-the same searches, settings, listing history, lifecycle state, and analytics,
-then backs up and migrates the schema only when required. Deleting the ONEDIR
-bundle does not delete user data.
-
-#### Packaged-build acceptance
-
-After installing `requirements-build.txt` and running the build script:
-
-1. From outside the repository, run
-   `/absolute/path/to/resell-monitor/dist/ResellMonitor/ResellMonitor`.
-2. Confirm the native window opens without a Python command and no scan starts.
-3. Check Overview, Searches, Listings, stored thumbnails, Settings, RU/EN,
-   themes, sorting, and external links. External listings should open in the
-   system browser while the application remains open.
-4. Close and relaunch; confirm searches, settings, history, and lifecycle state
-   remain.
-5. Build or copy a second application bundle, leave the user directories above
-   untouched, and launch the second executable to simulate an update.
-6. Confirm the same data remains and that removing only `dist/ResellMonitor/`
-   does not remove the platformdirs directories.
-
-For an existing checkout outside the recognized `dist/ResellMonitor/` layout,
-use `--legacy-root /absolute/path/to/resell-monitor` on the first launch only.
-Inspect artifact and data sizes independently with, for example:
-
-```bash
-du -sh /absolute/path/to/resell-monitor/dist/ResellMonitor
-du -sh ~/.local/share/resell-monitor ~/.config/resell-monitor
-```
-
-Automatic exports use collision-safe local-time names such as
-`listings_gpu_2026-08-10_180512.txt`. TXT, JSON, and HTML include normalized
-identity, availability/condition, compatible used-market evidence, decomposed
-deal/confidence/liquidity/risk scores, priority/verdict, and review reasons.
-
-## Market and availability semantics
-
-Historical price observations remain part of market snapshots even after a
-listing becomes stale or unavailable. Current opportunities are stricter:
-archived and disappeared listings are never actionable, while stale and unknown
-listings are excluded by default. This prevents an old cheap listing from being
-presented as a current buying opportunity.
-
-Candidate validation runs before normal persistence. Source health therefore
-tracks raw, valid, rejected, and priced items; an HTTP 200 response with mostly
-navigation/UI artifacts is degraded rather than healthy. Used-market ranking is
-cross-source, excludes the candidate itself, faulty or price-ambiguous offers,
-and conservative near-duplicates. A sufficiently large exact-location pool is
-preferred; otherwise the broader pool is labeled and confidence is reduced.
-
-## Retail diagnostics
-
-Retail diagnostics make one live provider request and save sanitized output.
-They are not part of the offline test suite. Run them only deliberately:
-
-```bash
-.venv/bin/python -m src.debug_retail dns --query "RTX 3060 12GB" --region Khabarovsk
-.venv/bin/python -m src.debug_retail dns --key 'gpu:rtx-3060:12gb' --url 'https://www.dns-shop.ru/product/0123456789abcdef/example-product/' --region Khabarovsk
-.venv/bin/python -m src.debug_retail ozon --query "RTX 3060 12GB" --region Khabarovsk
-.venv/bin/python -m src.debug_retail ozon --key 'gpu:rtx-3060:12gb' --url 'https://www.ozon.ru/product/example-1234567890/' --region Khabarovsk
-.venv/bin/python -m src.debug_retail wildberries --query "RTX 3060 12GB" --region Khabarovsk
-```
-
-Wildberries also accepts `--product-id <nmId>` for one exact mapped-card request.
-Its numeric destination can be supplied without pretending the configured city
-name is itself a WB ID, for example `--region "Region name; wb_dest=-123"` after
-confirming the current destination value in a normal browser session.
-
-Ozon mapped diagnostics validate a canonical HTTPS product URL and make one
-bounded logical retrieval. Ozon search is intended for explicit discovery;
-scheduled monitoring should use a reviewed product mapping. Redirect diagnostics
-retain host/path, parameter names, and cookie names only—never their values.
-
-DNS mapped diagnostics likewise require a canonical `/product/<id>/<slug>/`
-HTTPS URL. DNS currently presents a Qrator challenge on the tested route, so its
-ordinary HTTP provider remains blocked/experimental. The configured region is
-recorded as unresolved scope unless a future normal consumer path provides
-verifiable DNS locality context.
-
-Use `--url` for an explicit mapped product page and `--output-dir` to change the
-diagnostic directory. Current provider research and limitations are documented
-in `docs/retail-research.md`.
-
-Marketplace source diagnostics are similarly explicit and make live requests;
-see `.venv/bin/python -m src.debug_source --help` before using them.
-
-## Running tests
-
-The complete test suite is offline and uses saved fixtures or fake transports:
-
-```bash
-.venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
-```
-
-## Project structure
-
-```text
-src/
-  analytics/          product normalization, market statistics, availability,
-                      condition assessment, and resale scoring
-  gui/                local HTTP application and static web interface
-  reporting/          JSON, TXT, and HTML exports
-  retail_providers/   experimental retail provider adapters
-  sources/            marketplace-specific source adapters and transports
-  storage/            versioned SQLite repository
-  models.py           shared marketplace-independent domain models
-  monitor.py          scan orchestration
-tests/                offline unit and regression tests plus saved fixtures
-docs/                 design and provider research notes
-```
-
-## Known limitations
-
-- Marketplace and retail HTML/JSON structures can change without notice.
-- Youla retrieval remains experimental/degraded when product data is not present
-  in embedded state.
-- Retail providers may be blocked and are not guaranteed to return usable data.
-- Product normalization intentionally excludes ambiguous listings.
-- Availability can be confirmed as archived only when an existing source result
-  includes an explicit archive/unavailable signal; disappearance is kept distinct.
-- The current paths and shell examples are Linux-oriented. Windows packaging and
-  Docker deployment have not yet been implemented.
-- There is no CAPTCHA bypass, proxy rotation, or high-frequency pagination.
-
-## Third-party reference and licensing status
-
-Public projects were studied only at the architectural level. No source code was
-copied from `Duff89/parser_avito`; that repository had no license and was treated
-as reference-only.
-
-This project is available under the MIT License; see `LICENSE`. Its direct
-Python dependencies also use permissive licenses.
+Resell Monitor is available under the [MIT License](LICENSE).

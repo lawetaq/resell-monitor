@@ -18,6 +18,7 @@ from src.locations import (DEFAULT_LOCATION, build_search_url, detect_location_f
                            profile_setting_value, search_locations, source_resolution,
                            validate_marketplace_url)
 from src.monitor import Monitor, SourceScan
+from src.project import project_info
 from src.reporting import collision_safe_export_path, export_html, export_json, export_txt
 from src.scheduler import SearchScheduler
 from src.storage import ListingRepository, SearchAccessState
@@ -26,8 +27,10 @@ from src.retail_providers import DnsRetailProvider, OzonRetailProvider, Wildberr
 from src.retail_browser import RetailBrowserService, status_payload
 from src.retail_browser_adapters import ADAPTERS
 from src.version import __version__
+from src.updates import check_for_updates
 
 ScanRunner = Callable[[list[SearchConfig], Callable[[str], None]], list[SourceScan]]
+UpdateChecker = Callable[[], dict[str, object]]
 LOGGER = logging.getLogger(__name__)
 
 
@@ -44,6 +47,7 @@ class GuiService:
         scan_runner: ScanRunner | None = None,
         retail_browser: RetailBrowserService | None = None,
         retail_profile_dir: Path | None = None,
+        update_checker: UpdateChecker | None = None,
     ) -> None:
         self.config_path = config_path
         self.database_path = database_path
@@ -53,6 +57,8 @@ class GuiService:
         self._state_lock = threading.RLock()
         self._scan_lock = threading.Lock()
         self._retail_lock = threading.Lock()
+        self._update_lock = threading.Lock()
+        self._update_checker = update_checker or check_for_updates
         self._stop_event = threading.Event()
         self._monitor_thread: threading.Thread | None = None
         self._monitoring = False
@@ -67,6 +73,20 @@ class GuiService:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         with ListingRepository(self.database_path):
             pass
+
+    def project_info(self) -> dict[str, object]:
+        return project_info()
+
+    def check_for_updates(self) -> dict[str, object]:
+        if not self._update_lock.acquire(blocking=False):
+            return {"status": "checking", "current_version": __version__}
+        try:
+            return self._update_checker()
+        except Exception:
+            LOGGER.warning("Manual update check failed", exc_info=True)
+            return {"status": "api_error", "current_version": __version__}
+        finally:
+            self._update_lock.release()
 
     def searches(self, *, include_secrets: bool = False) -> list[dict[str, object]]:
         searches = self._load_searches()

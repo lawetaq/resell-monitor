@@ -30,6 +30,12 @@ def assemble_appdir(bundle: Path, appdir: Path, project_root: Path) -> None:
         root / "packaging" / "resell-monitor.desktop",
         destination / "resell-monitor.desktop",
     )
+    metainfo_dir = destination / "usr" / "share" / "metainfo"
+    metainfo_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(
+        root / "packaging" / "resell-monitor.metainfo.xml",
+        metainfo_dir / "resell-monitor.metainfo.xml",
+    )
     icon = root / "assets" / "branding" / "resell-monitor-256.png"
     shutil.copy2(icon, destination / "resell-monitor.png")
     (destination / "AppRun").chmod(0o755)

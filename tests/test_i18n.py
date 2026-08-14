@@ -78,7 +78,7 @@ class LocalizationTests(unittest.TestCase):
         self.assertIn("Выберите язык интерфейса приложения.", self.catalog)
 
     def test_language_preview_does_not_reload_unsaved_settings(self) -> None:
-        handler = "$('#interface-language').onchange=e=>{I18n.setLanguage(e.target.value);refreshPageTitle()}"
+        handler = "$('#interface-language').onchange=e=>{I18n.setLanguage(e.target.value);refreshPageTitle();renderProjectInfo()}"
         self.assertIn(handler, self.script)
         self.assertNotIn(handler[:-1] + ";loadPage(state.page)}", self.script)
         self.assertIn("state.settings=await api('/api/settings'", self.script)
