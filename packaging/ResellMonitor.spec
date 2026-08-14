@@ -9,6 +9,7 @@ datas = [
     (str(project_root / "src" / "gui" / "static"), "src/gui/static"),
     (str(project_root / "src" / "location_registry.json"), "src"),
     (str(project_root / "assets" / "branding"), "assets/branding"),
+    (str(project_root / "packaging" / "resell-monitor.desktop"), "packaging"),
 ]
 
 analysis = Analysis(

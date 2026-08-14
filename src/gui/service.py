@@ -18,6 +18,7 @@ from src.locations import (DEFAULT_LOCATION, build_search_url, detect_location_f
                            profile_setting_value, search_locations, source_resolution,
                            validate_marketplace_url)
 from src.monitor import Monitor, SourceScan
+from src.linux_integration import LinuxIntegration
 from src.project import project_info
 from src.reporting import collision_safe_export_path, export_html, export_json, export_txt
 from src.scheduler import SearchScheduler
@@ -48,6 +49,7 @@ class GuiService:
         retail_browser: RetailBrowserService | None = None,
         retail_profile_dir: Path | None = None,
         update_checker: UpdateChecker | None = None,
+        linux_integration: LinuxIntegration | None = None,
     ) -> None:
         self.config_path = config_path
         self.database_path = database_path
@@ -59,6 +61,7 @@ class GuiService:
         self._retail_lock = threading.Lock()
         self._update_lock = threading.Lock()
         self._update_checker = update_checker or check_for_updates
+        self._linux_integration = linux_integration or LinuxIntegration()
         self._stop_event = threading.Event()
         self._monitor_thread: threading.Thread | None = None
         self._monitoring = False
@@ -87,6 +90,17 @@ class GuiService:
             return {"status": "api_error", "current_version": __version__}
         finally:
             self._update_lock.release()
+
+    def desktop_integration(self) -> dict[str, object]:
+        return self._linux_integration.status()
+
+    def install_desktop_integration(self) -> dict[str, object]:
+        try:
+            return self._linux_integration.install()
+        except Exception:
+            LOGGER.warning("Desktop integration failed", exc_info=True)
+            current = self._linux_integration.status()
+            return {**current, "result": "error", "restart_required": False}
 
     def searches(self, *, include_secrets: bool = False) -> list[dict[str, object]]:
         searches = self._load_searches()
@@ -524,6 +538,7 @@ class GuiService:
             "retail_dns_enabled": 0,
             "retail_ozon_enabled": 0,
             "retail_wildberries_enabled": 0,
+            "linux_integration_prompt_dismissed": 0,
         }
         with ListingRepository(self.database_path) as repository:
             stored = repository.app_settings()
@@ -551,6 +566,7 @@ class GuiService:
             "unreviewed_inbox_days", "disappearance_success_scans",
             "archive_disappeared_days", "archive_retention_days",
             "retail_ozon_enabled", "retail_wildberries_enabled",
+            "linux_integration_prompt_dismissed",
         )
         for key in numeric:
             values[key] = int(values[key])
@@ -582,6 +598,8 @@ class GuiService:
         for key in ("retail_dns_enabled", "retail_ozon_enabled", "retail_wildberries_enabled"):
             if values[key] not in {0, 1}:
                 raise ValueError(f"{key} must be enabled or disabled")
+        if values["linux_integration_prompt_dismissed"] not in {0, 1}:
+            raise ValueError("integration prompt dismissal must be enabled or disabled")
         if values["default_export_format"] not in {"json", "txt", "html"}:
             raise ValueError("default export format must be json, txt, or html")
         if values["default_search_editor"] not in {"simple", "advanced"}:

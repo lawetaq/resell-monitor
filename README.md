@@ -34,9 +34,19 @@ No approved product screenshots are committed yet. The repository has a
 The first packaged release targets Linux x86_64. Neither method requires Python
 on the end user's machine.
 
-### Portable AppImage
+### AppImage
 
-Download the release bundle, verify its checksum, then run:
+Download the AppImage and open its file properties. If the executable permission
+was not preserved, use **Properties → Permissions → Allow executing as program**,
+then open Resell Monitor normally.
+
+The application starts immediately in portable mode. Choose **Add to
+applications** in the non-blocking first-run prompt to add it to a KDE, GNOME,
+or other freedesktop-compatible application menu. The action remains available
+under **Settings → About → Installation**. It requires no sudo and does not move
+or remove user data.
+
+Checksum verification and the terminal equivalent are:
 
 ```bash
 sha256sum -c ResellMonitor-0.1.0-x86_64.AppImage.sha256
@@ -44,16 +54,15 @@ chmod +x ResellMonitor-0.1.0-x86_64.AppImage
 ./ResellMonitor-0.1.0-x86_64.AppImage
 ```
 
-### User installation
+### Advanced manual integration
 
-The release bundle includes the helper and branding assets needed to add Resell
-Monitor to KDE, GNOME, and other freedesktop-compatible application menus:
+The release bundle retains the command-line helper as a fallback:
 
 ```bash
 ./install_linux_user.sh ./ResellMonitor-0.1.0-x86_64.AppImage
 ```
 
-No root access is required. This installs the executable at
+GUI and command-line integration install the executable at
 `~/.local/bin/resell-monitor`, a desktop entry under
 `~/.local/share/applications/`, and icons under the user hicolor icon theme.
 
@@ -112,10 +121,11 @@ Source/development mode retains repository-local `data/`, `searches.json`,
 
 ## Updating
 
-There is no auto-update. Download the newer release bundle and run its installer
-with the newer AppImage. The helper atomically replaces the stable executable
-path and refreshes integration assets; the separate data/configuration paths are
-untouched. Portable users can replace their AppImage file directly.
+There is no auto-update. Download and launch the newer AppImage, then use
+**Settings → About → Installation → Reinstall integration** to atomically
+replace the stable executable. The command-line helper remains an equivalent
+fallback. Separate data and configuration paths remain untouched. Portable
+users can replace their AppImage file directly.
 
 Settings → About provides a manual availability check against this project's
 GitHub Releases. It contacts GitHub only when requested and can open the release

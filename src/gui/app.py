@@ -152,6 +152,8 @@ def create_handler(
                 self._json(HTTPStatus.OK, service.settings())
             elif parsed.path == "/api/project":
                 self._json(HTTPStatus.OK, service.project_info())
+            elif parsed.path == "/api/desktop-integration":
+                self._json(HTTPStatus.OK, service.desktop_integration())
             elif parsed.path == "/api/cleanup/preview":
                 self._json(HTTPStatus.OK, service.cleanup_preview())
             elif parsed.path == "/api/locations":
@@ -229,6 +231,10 @@ def create_handler(
                 self._json(HTTPStatus.OK, service.update_settings(self._body()))
             elif path == "/api/updates/check":
                 self._json(HTTPStatus.OK, service.check_for_updates())
+            elif path == "/api/desktop-integration/install":
+                if self._body():
+                    raise ValueError("desktop integration install accepts no parameters")
+                self._json(HTTPStatus.OK, service.install_desktop_integration())
             elif path == "/api/cleanup/apply":
                 payload = self._body()
                 self._json(HTTPStatus.OK, service.apply_cleanup(
