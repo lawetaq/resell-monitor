@@ -4,16 +4,6 @@ Notable user-visible changes to Resell Monitor are documented here.
 
 ## [Unreleased]
 
-### Added
-
-- Manual GitHub Releases update availability check in Settings → About.
-- Read-only project, release, issue, license, and diagnostic resources in Settings.
-
-### Changed
-
-- About now presents branded version and release-channel information.
-- Read-only Settings sections no longer display the global save action.
-
 ## [0.1.0] - 2026-08-14
 
 ### Added
@@ -24,15 +14,17 @@ Notable user-visible changes to Resell Monitor are documented here.
 - TXT, JSON, and HTML exports.
 - Russian and English interfaces with the complete application theme set.
 - Native Linux desktop shell and Linux x86_64 AppImage distribution.
-- User-level Linux menu installation and removal helpers.
+- Optional first-run user-level desktop-menu integration, with installation and removal helpers as a fallback.
 - Persistent platform-native data, configuration, cache, exports, and logs.
 - Verified database backups before schema migration.
 - Experimental browser-assisted retail evidence for supported retail sources.
+- Branded About and Support resources with manual GitHub release checking.
 
 ### Changed
 
 - Packaged application files are fully separated from mutable user data.
 - AppImage packaging now contains AppStream metadata.
+- Read-only Settings sections no longer display the global save action.
 
 ### Fixed
 

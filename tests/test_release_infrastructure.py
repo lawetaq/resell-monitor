@@ -119,14 +119,49 @@ class ReleaseContractTests(unittest.TestCase):
         build = (ROOT / "scripts/build_release_linux.sh").read_text()
         validation = (ROOT / "scripts/validate_release_linux.sh").read_text()
         self.assertIn("from src.version import __version__", build)
+        self.assertIn("from src.version import RELEASE_CHANNEL", build)
         self.assertIn("scripts/build_appimage.sh", build)
-        self.assertIn('docs/releases/${version}-alpha.md', build)
+        self.assertIn('docs/releases/${version}-${release_channel}.md', build)
         self.assertIn('sha256sum "$artifact_name"', build)
         self.assertIn("ResellMonitor-${version}-${architecture}.AppImage", build)
         self.assertIn("sha256sum -c", validation)
+        self.assertIn("from src.version import RELEASE_CHANNEL", validation)
+        self.assertIn("Release artifact is stale", validation)
         self.assertIn("searches.json", validation)
         self.assertTrue((ROOT / "docs/releases/0.1.0-alpha.md").is_file())
         self.assertTrue((ROOT / "CHANGELOG.md").is_file())
+
+    def test_first_alpha_publication_contract(self) -> None:
+        releasing = (ROOT / "docs/RELEASING.md").read_text(encoding="utf-8")
+        notes = (ROOT / "docs/releases/0.1.0-alpha.md").read_text(encoding="utf-8")
+        changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        for expected in (
+            "v0.1.0-alpha", "Resell Monitor 0.1.0 Alpha", "Pre-release",
+            "ResellMonitor-0.1.0-x86_64.AppImage",
+            "ResellMonitor-0.1.0-x86_64.AppImage.sha256",
+        ):
+            self.assertIn(expected, releasing)
+        for heading in (
+            "## Highlights", "## Download", "## Installation", "## Updating",
+            "## Data and privacy", "## Known limitations", "## Verification",
+        ):
+            self.assertIn(heading, notes)
+        self.assertLess(changelog.index("## [Unreleased]"), changelog.index("## [0.1.0]"))
+        self.assertIn("first public alpha", notes.casefold())
+
+    def test_public_media_and_external_tester_guidance(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        media = (ROOT / "docs/media/README.md").read_text(encoding="utf-8")
+        tester = (ROOT / "docs/TESTING_ALPHA.md").read_text(encoding="utf-8")
+        for filename in (
+            "overview-dark.png", "listings-dark.png", "about-dark.png",
+            "theme-switching.gif", "search-workflow.gif",
+        ):
+            self.assertIn(filename, media)
+            self.assertNotIn(f"](docs/media/{filename})", readme)
+        self.assertIn("1400×880", media)
+        self.assertIn("Linux distribution/version:", tester)
+        self.assertIn("cookies, credentials, databases", tester.casefold())
 
     def test_documentation_contract(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

@@ -26,7 +26,7 @@ is expressed in tags and release titles:
 9. Commit approved release metadata and code changes.
 10. Create the release tag manually.
 11. Create the GitHub Release manually and use the versioned release notes.
-12. Upload every file from `dist/release/` without databases or user configuration.
+12. Upload the AppImage and SHA256 file from `dist/release/`.
 
 Build command:
 
@@ -44,3 +44,52 @@ PYTHON=.venv/bin/python scripts/validate_release_linux.sh dist/release
 The scripts do not create commits, tags, releases, or uploads. A GitHub Actions
 release workflow is intentionally deferred until the manual Linux release has
 been validated across the target desktop workflow.
+
+## First public alpha publication
+
+After the release state and final locally built artifacts are approved, create
+the annotated tag manually:
+
+```bash
+git tag -a v0.1.0-alpha -m "Resell Monitor 0.1.0 Alpha"
+git push origin v0.1.0-alpha
+```
+
+Then create a GitHub Release with:
+
+- Tag: `v0.1.0-alpha`
+- Title: `Resell Monitor 0.1.0 Alpha`
+- Release type: **Pre-release**
+- Description: the reviewed contents of `docs/releases/0.1.0-alpha.md`
+- Assets: `ResellMonitor-0.1.0-x86_64.AppImage` and
+  `ResellMonitor-0.1.0-x86_64.AppImage.sha256`
+
+The installer, uninstaller, desktop template, icons, and local
+`RELEASE_NOTES.md` remain useful in the reproducible local bundle but are not
+required public downloads for the AppImage's GUI installation flow.
+
+## Post-release update-check acceptance
+
+Before the GitHub Release exists, a manual update check may correctly report no
+published release. After `v0.1.0-alpha` is published:
+
+1. Launch Resell Monitor 0.1.0 Alpha.
+2. Open Settings → About.
+3. Confirm no update request occurred automatically during startup.
+4. Press **Check for updates**.
+5. Confirm the result reports the installed version as current.
+6. If a release link is shown, confirm it opens the exact published GitHub
+   release in the system browser.
+
+This exercises the application, GitHub Releases API, semantic release parser,
+external URL policy, and About UI end to end. For a later `v0.1.1-alpha`
+release, repeat from 0.1.0 and confirm **Update available** plus **View release**;
+no automatic download should occur.
+
+## Future automation boundary
+
+GitHub Actions release automation remains deferred for this first release. A
+later CI-friendly flow can use an explicit tag push to run offline tests, build
+the Linux AppImage, generate and verify its checksum, and attach the two public
+assets to a GitHub Release. It must continue to use the existing local scripts
+rather than duplicate packaging logic.

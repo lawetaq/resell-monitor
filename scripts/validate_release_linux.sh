@@ -8,8 +8,13 @@ version=$(
     cd "$project_root"
     "$python_command" -c "from src.version import __version__; print(__version__)"
 )
+release_channel=$(
+    cd "$project_root"
+    "$python_command" -c "from src.version import RELEASE_CHANNEL; print(RELEASE_CHANNEL)"
+)
 release_dir=${1:-"$project_root/dist/release"}
 artifact_name="ResellMonitor-${version}-x86_64.AppImage"
+release_notes_source="$project_root/docs/releases/${version}-${release_channel}.md"
 
 if [ ! -d "$release_dir" ]; then
     echo "Release directory not found: $release_dir" >&2
@@ -38,6 +43,28 @@ for size in 32 48 64 128 256 512; do
         echo "Missing ${size}x${size} branding icon." >&2
         exit 1
     }
+done
+for pair in \
+    "$release_notes_source:$release_dir/RELEASE_NOTES.md" \
+    "$project_root/scripts/install_linux_user.sh:$release_dir/install_linux_user.sh" \
+    "$project_root/scripts/uninstall_linux_user.sh:$release_dir/uninstall_linux_user.sh" \
+    "$project_root/packaging/resell-monitor.desktop:$release_dir/resell-monitor.desktop" \
+    "$project_root/packaging/resell-monitor.metainfo.xml:$release_dir/resell-monitor.metainfo.xml"
+do
+    source_file=${pair%%:*}
+    bundled_file=${pair#*:}
+    if ! cmp -s "$source_file" "$bundled_file"; then
+        echo "Release artifact is stale: $(basename -- "$bundled_file")" >&2
+        exit 1
+    fi
+done
+for size in 32 48 64 128 256 512; do
+    if ! cmp -s \
+        "$project_root/assets/branding/resell-monitor-$size.png" \
+        "$release_dir/icons/resell-monitor-$size.png"; then
+        echo "Release branding icon is stale: ${size}x${size}" >&2
+        exit 1
+    fi
 done
 (
     cd "$release_dir"

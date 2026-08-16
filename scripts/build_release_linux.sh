@@ -9,6 +9,10 @@ version=$(
     cd "$project_root"
     "$python_command" -c "from src.version import __version__; print(__version__)"
 )
+release_channel=$(
+    cd "$project_root"
+    "$python_command" -c "from src.version import RELEASE_CHANNEL; print(RELEASE_CHANNEL)"
+)
 artifact_name="ResellMonitor-${version}-${architecture}.AppImage"
 source_artifact="$project_root/dist/$artifact_name"
 release_dir="$project_root/dist/release"
@@ -31,7 +35,7 @@ esac
 rm -rf -- "$release_dir"
 mkdir -p "$release_dir/icons"
 cp -- "$source_artifact" "$release_dir/$artifact_name"
-release_notes="$project_root/docs/releases/${version}-alpha.md"
+release_notes="$project_root/docs/releases/${version}-${release_channel}.md"
 if [ ! -f "$release_notes" ]; then
     echo "Release notes not found: $release_notes" >&2
     exit 1
